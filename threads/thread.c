@@ -20,6 +20,9 @@
    of thread.h for details. */
 #define THREAD_MAGIC 0xcd6abf4b
 
+/* List of processes that are sleeping :)  */
+static struct list sleep_list;
+
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
 static struct list ready_list;
@@ -90,6 +93,7 @@ thread_init (void)
   ASSERT (intr_get_level () == INTR_OFF);
 
   lock_init (&tid_lock);
+  list_init (&sleep_list);
   list_init (&ready_list);
   list_init (&all_list);
 
@@ -115,6 +119,42 @@ thread_start (void)
 
   /* Wait for the idle thread to initialize idle_thread. */
   sema_down (&idle_started);
+}
+
+void sleep_thread(int64_t ticks_to_sleep) {
+  /* ? esto debe ser una nueva funcion? */
+  enum intr_level old_level = intr_disable ();
+
+  /* assign sleep time to current thread  */
+  struct thread *curr_thread = thread_current ();
+  curr_thread->awake_on_ticks = timer_ticks () + ticks_to_sleep;
+
+  /* remove current thread from ready_list  */
+  list_push_back (&sleep_list, &curr_thread->elem);
+  thread_block();
+
+  /* enable interruptions */
+  intr_set_level (old_level);
+}
+
+/* Check if exists threads that must wake up :) */
+void
+awake_sleeping_thread (int64_t ticks)
+{
+  struct list_elem *item = list_begin (&sleep_list); /* i_thread is like i in a for loop */
+  while (item != list_end (&sleep_list))
+  {
+    /* ? how does list_entry works?  */
+    struct thread *item_thread = list_entry (item, struct thread, elem);
+
+    if (ticks >= item_thread->awake_on_ticks) {
+      /* wake up thread */
+      item = list_remove(item); /* ? how does this functions works? */
+      thread_unblock(item_thread);
+    } else {
+      item = list_next(item);
+    }
+  }
 }
 
 /* Called by the timer interrupt handler at each timer tick.
@@ -578,7 +618,7 @@ allocate_tid (void)
 
   return tid;
 }
-
+
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
