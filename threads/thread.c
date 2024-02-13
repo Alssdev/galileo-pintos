@@ -131,7 +131,7 @@ void sleep_thread(int64_t ticks_to_sleep) {
 
   /* remove current thread from ready_list  */
   list_push_back (&sleep_list, &curr_thread->elem);
-  thread_block();
+  thread_block(); /* this function removes the thread from ready_list */
 
   /* enable interruptions */
   intr_set_level (old_level);
@@ -156,6 +156,17 @@ awake_sleeping_thread (int64_t ticks)
     }
   }
 }
+
+/* This function compares threads by their priority. When used in a
+ * list sort, this function produces a descending ordered list. */
+bool thread_less_func (const struct list_elem *a, const struct list_elem *b, void *aux)
+  {
+    struct thread *thread_a = list_entry(a, struct thread, elem);
+    struct thread *thread_b = list_entry(b, struct thread, elem);
+    
+    /* descending (>) | ascending (<) */
+    return thread_a->priority > thread_b->priority;
+  } 
 
 /* Called by the timer interrupt handler at each timer tick.
    Thus, this function runs in an external interrupt context. */
@@ -277,8 +288,17 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+
+  // ready_list must be ordered
+  list_insert_ordered(&ready_list, &t->elem, &thread_less_func, NULL);
   t->status = THREAD_READY;
+  
+  if (thread_current () != idle_thread) {
+    if (t->priority > thread_current ()->priority) {
+      thread_yield();
+    }
+  }
+
   intr_set_level (old_level);
 }
 
@@ -330,7 +350,7 @@ thread_exit (void)
      and schedule another process.  That process will destroy us
      when it calls thread_schedule_tail(). */
   intr_disable ();
-  list_remove (&thread_current()->allelem);
+  list_remove (&thread_current ()->allelem);
   thread_current ()->status = THREAD_DYING;
   schedule ();
   NOT_REACHED ();
@@ -339,16 +359,19 @@ thread_exit (void)
 /* Yields the CPU.  The current thread is not put to sleep and
    may be scheduled again immediately at the scheduler's whim. */
 void
-thread_yield (void) 
+thread_yield (void)
 {
-  struct thread *cur = thread_current ();
+  struct thread *cur;
   enum intr_level old_level;
   
   ASSERT (!intr_context ());
 
   old_level = intr_disable ();
-  if (cur != idle_thread) 
-    list_push_back (&ready_list, &cur->elem);
+  cur = thread_current ();
+
+  if (cur != idle_thread)
+    list_insert_ordered(&ready_list, &cur->elem, &thread_less_func, NULL); 
+
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -374,8 +397,16 @@ thread_foreach (thread_action_func *func, void *aux)
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) 
-{
-  thread_current ()->priority = new_priority;
+{ 
+  enum intr_level old_level = intr_disable ();
+  struct thread *cur = thread_current ();
+  cur->priority = new_priority;
+  
+  if (new_priority < thread_top ()->priority) {
+    thread_yield (); 
+  }
+
+  intr_set_level (old_level);
 }
 
 /* Returns the current thread's priority. */
@@ -415,7 +446,7 @@ thread_get_recent_cpu (void)
   /* Not yet implemented. */
   return 0;
 }
-
+
 /* Idle thread.  Executes when no other thread is ready to run.
 
    The idle thread is initially put on the ready list by
@@ -534,6 +565,18 @@ next_thread_to_run (void)
     return idle_thread;
   else
     return list_entry (list_pop_front (&ready_list), struct thread, elem);
+}
+
+/* This function peeks the thread with the highest priority in
+ * the ready_list. If you want to pop a thread use next_thread_to_run. */
+struct thread *
+thread_top (void) {
+  ASSERT (intr_get_level () == INTR_OFF);
+
+  if (list_empty (&ready_list))
+    return idle_thread;
+  else
+    return list_entry (list_begin (&ready_list), struct thread, elem);
 }
 
 /* Completes a thread switch by activating the new thread's page

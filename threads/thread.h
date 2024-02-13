@@ -90,11 +90,10 @@ struct thread
     int priority;                       /* Priority. */
     struct list_elem allelem;           /* List element for all threads list. */
 
+    int64_t awake_on_ticks; /* ticks number when the thread must awake  */
+
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
-    
-    /* this represents the ticks number when the thread must awake  */
-    int64_t awake_on_ticks;
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
@@ -112,11 +111,8 @@ extern bool thread_mlfqs;
 
 void thread_init (void);
 void thread_start (void);
-// void sleep_thread(int64_t ticks_to_sleep);
-void sleep_thread(int64_t);
-//void awake_sleeping_thread(int64_t ticks);
-void awake_sleeping_thread(int64_t);
-
+void sleep_thread(int64_t ticks_to_sleep);
+void awake_sleeping_thread(int64_t ticks);
 void thread_tick (void);
 void thread_print_stats (void);
 
@@ -126,6 +122,8 @@ tid_t thread_create (const char *name, int priority, thread_func *, void *);
 void thread_block (void);
 void thread_unblock (struct thread *);
 
+
+struct thread *thread_top (void);
 struct thread *thread_current (void);
 tid_t thread_tid (void);
 const char *thread_name (void);
@@ -144,5 +142,9 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+
+
+/* priority scheduler */
+bool thread_less_func (const struct list_elem *A, const struct list_elem *B, void *aux);
 
 #endif /* threads/thread.h */

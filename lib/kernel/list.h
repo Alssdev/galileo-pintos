@@ -86,7 +86,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* List element. */
+/* List element. (node) */
 struct list_elem 
   {
     struct list_elem *prev;     /* Previous list element. */
@@ -158,7 +158,7 @@ bool list_empty (struct list *);
 
 /* Miscellaneous. */
 void list_reverse (struct list *);
-
+
 /* Compares the value of two list elements A and B, given
    auxiliary data AUX.  Returns true if A is less than B, or
    false if A is greater than or equal to B. */

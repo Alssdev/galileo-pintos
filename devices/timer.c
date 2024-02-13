@@ -89,8 +89,7 @@ timer_elapsed (int64_t then)
 void
 timer_sleep (int64_t ticks) 
 {
-  /* TODO: volver a poner ASSERT */
-
+  ASSERT (intr_get_level () == INTR_ON);
   sleep_thread(ticks);
 }
 
