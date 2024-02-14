@@ -158,6 +158,24 @@ sema_test_helper (void *sema_)
     }
 }
 
+/* This function compares two semaphores (semaphore_elem) by the highest
+ * priority in each waiter list.
+ *
+ * Its main purpose is to be used within cond_wait (). If it's not necessary,
+ * do not use.
+ * */
+bool
+sema_elem_less_func (const struct list_elem *a, const struct list_elem *b, void *aux)
+  {
+    struct thread *thread_a = (list_entry(a, struct semaphore_elem, elem))->top_thread;
+    struct thread *thread_b = (list_entry(b, struct semaphore_elem, elem))->top_thread;
+
+    ASSERT (thread_a != NULL);
+    ASSERT (thread_b != NULL);
+
+    return thread_a->priority > thread_b->priority;
+  }
+
 /* Initializes LOCK.  A lock can be held by at most a single
    thread at any given time.  Our locks are not "recursive", that
    is, it is an error for the thread currently holding a lock to
@@ -246,13 +264,6 @@ lock_held_by_current_thread (const struct lock *lock)
 
   return lock->holder == thread_current ();
 }
-
-/* One semaphore in a list. */
-struct semaphore_elem 
-  {
-    struct list_elem elem;              /* List element. */
-    struct semaphore semaphore;         /* This semaphore. */
-  };
 
 /* Initializes condition variable COND.  A condition variable
    allows one piece of code to signal a condition and cooperating
@@ -292,11 +303,16 @@ cond_wait (struct condition *cond, struct lock *lock)
 
   ASSERT (cond != NULL);
   ASSERT (lock != NULL);
-  ASSERT (!intr_context ());
-  ASSERT (lock_held_by_current_thread (lock));
-  
+  ASSERT (!intr_context ()); /* not an external interrupt */
+  ASSERT (lock_held_by_current_thread (lock)); /* current_thread owns the lock */
+
   sema_init (&waiter.semaphore, 0);
-  list_push_back (&cond->waiters, &waiter.elem);
+
+  // assing current thread to semaphore_elem for sorting purposes
+  waiter.top_thread =  thread_current ();
+
+  // keep waiter list ordered
+  list_insert_ordered(&cond->waiters, &waiter.elem, &sema_elem_less_func, NULL);
   lock_release (lock);
   sema_down (&waiter.semaphore);
   lock_acquire (lock);

@@ -10,13 +10,20 @@ struct semaphore
     unsigned value;             /* Current value. */
     struct list waiters;        /* List of waiting threads. */
   };
+/* One semaphore in a list. */
+struct semaphore_elem 
+  {
+    struct list_elem elem;              /* List element. */
+    struct thread *top_thread;          /* Keeps reference of top thread is semaphore for sorting purposes */
+    struct semaphore semaphore;         /* This semaphore. */
+  };
 
 void sema_init (struct semaphore *, unsigned value);
 void sema_down (struct semaphore *);
 bool sema_try_down (struct semaphore *);
 void sema_up (struct semaphore *);
 void sema_self_test (void);
-
+bool sema_elem_less_func (const struct list_elem *a, const struct list_elem *b, void *aux); 
 /* Lock. */
 struct lock 
   {
