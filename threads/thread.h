@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "../devices/timer.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -90,7 +91,10 @@ struct thread
     int priority;                       /* Priority. */
     struct list_elem allelem;           /* List element for all threads list. */
 
-    int64_t awake_on_ticks; /* ticks number when the thread must awake  */
+    int64_t awake_on_ticks;             /* Ticks number when the thread must wake up.  */
+
+    struct list donation_list;          /* Priority donations received. See /lib/kernel/list.h/donation_list_elem. */
+    struct lock *waiting_for_lock;      /* If it's not NULL, this represents the lock I'm waiting for. */
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
@@ -135,6 +139,7 @@ void thread_yield (void);
 typedef void thread_action_func (struct thread *t, void *aux);
 void thread_foreach (thread_action_func *, void *);
 
+int thread_calc_priority (struct thread *t);
 int thread_get_priority (void);
 void thread_set_priority (int);
 

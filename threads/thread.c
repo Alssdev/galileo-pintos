@@ -406,11 +406,29 @@ thread_set_priority (int new_priority)
   intr_set_level (old_level);
 }
 
+int
+thread_calc_priority (struct thread *t)
+{
+  // calc max in t->donation_list
+  ASSERT(t != NULL);
+  
+  if (!list_empty(&t->donation_list)) {
+    // debug
+    struct list_elem *elem = list_max(&t->donation_list, &donation_less_func, NULL);
+    int highest_received_priority = list_entry(elem, struct donation_list_elem, elem)->priority;
+    
+    if (t->priority <= highest_received_priority)
+      return highest_received_priority;
+  }
+
+  
+  return t->priority;
+}
 /* Returns the current thread's priority. */
 int
 thread_get_priority (void) 
 {
-  return thread_current ()->priority;
+  return thread_calc_priority (thread_current ());
 }
 
 /* Sets the current thread's nice value to NICE. */
@@ -530,6 +548,10 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+  
+  /* init internal lists */
+  list_init(&t->donation_list);
+
   t->magic = THREAD_MAGIC;
 
   old_level = intr_disable ();

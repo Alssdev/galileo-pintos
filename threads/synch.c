@@ -214,9 +214,56 @@ lock_acquire (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
+  ASSERT (thread_current ()->waiting_for_lock == NULL);
 
-  sema_down (&lock->semaphore);
-  lock->holder = thread_current ();
+  enum intr_level old_level = intr_disable();
+
+  /* is lock available? */
+  if (!lock_try_acquire (lock)) {
+    // donate priority to decrement waiting time.
+    lock_donate_priority (lock);
+
+    // start waiting...
+    sema_down (&lock->semaphore);
+
+    // set lock as mine
+    lock->holder = thread_current ();
+  }
+
+  // mark thread as Not waiting
+  thread_current ()->waiting_for_lock = NULL;
+
+  intr_set_level(old_level);
+}
+
+void
+lock_donate_priority (struct lock *lock)
+{
+  ASSERT(intr_get_level () == INTR_OFF);
+  ASSERT(lock->holder != NULL);
+
+  // donation
+  struct donation_list_elem d_elem;
+  d_elem.lock = lock;
+  d_elem.priority = thread_get_priority ();
+  list_push_front(&lock->holder->donation_list, &d_elem.elem);
+
+  // waiting for ...
+  thread_current ()->waiting_for_lock = lock;
+
+  // nested donations
+  if (lock->holder->waiting_for_lock != NULL) {
+    lock_donate_priority (lock->holder->waiting_for_lock);
+  }
+}
+
+bool
+donation_less_func (const struct list_elem *a, const struct list_elem *b, void *aux)
+{
+  struct donation_list_elem *elem_a = list_entry(a, struct donation_list_elem, elem);
+  struct donation_list_elem *elem_b = list_entry(b, struct donation_list_elem, elem);
+
+  return elem_a->priority < elem_b->priority;
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -249,7 +296,18 @@ lock_release (struct lock *lock)
 {
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
+  ASSERT (thread_current ()->waiting_for_lock == NULL);
 
+  struct list *donation_list = &thread_current ()->donation_list;
+  //if (!list_empty(donation_list)) { TODO: verificar si esto afecta o no
+    struct list_elem *e;
+    for (e = list_begin (donation_list); e != list_end (donation_list); e = list_next (e)) {
+      struct donation_list_elem *d_elem = list_entry(e, struct donation_list_elem, elem); 
+      if (d_elem->lock == lock)
+        list_remove(e);
+    }
+  //}
+  
   lock->holder = NULL;
   sema_up (&lock->semaphore);
 }
