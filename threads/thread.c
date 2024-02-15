@@ -165,7 +165,7 @@ bool thread_less_func (const struct list_elem *a, const struct list_elem *b, voi
     struct thread *thread_b = list_entry(b, struct thread, elem);
     
     /* descending (>) | ascending (<) */
-    return thread_a->priority > thread_b->priority;
+    return  thread_calc_priority (thread_a) >  thread_calc_priority (thread_b);
   } 
 
 /* Called by the timer interrupt handler at each timer tick.
@@ -290,12 +290,12 @@ thread_unblock (struct thread *t)
   ASSERT (t->status == THREAD_BLOCKED);
 
   // ready_list must be ordered
-  list_insert_ordered(&ready_list, &t->elem, &thread_less_func, NULL);
+  list_insert_ordered (&ready_list, &t->elem, &thread_less_func, NULL);
   t->status = THREAD_READY;
 
   if (thread_current () != idle_thread) {
-    if (t->priority > thread_current ()->priority) {
-      thread_yield();
+    if (thread_calc_priority (t) > thread_calc_priority (thread_current ())) {
+      thread_yield ();
     }
   }
 
@@ -398,9 +398,9 @@ thread_set_priority (int new_priority)
   enum intr_level old_level = intr_disable ();
   struct thread *cur = thread_current ();
   cur->priority = new_priority;
-  
-  if (new_priority < thread_top ()->priority) {
-    thread_yield (); 
+
+  if (thread_calc_priority (cur) < thread_calc_priority (thread_top ())) {
+    thread_yield ();
   }
 
   intr_set_level (old_level);
