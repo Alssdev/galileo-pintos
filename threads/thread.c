@@ -165,7 +165,7 @@ bool thread_less_func (const struct list_elem *a, const struct list_elem *b, voi
     struct thread *thread_b = list_entry(b, struct thread, elem);
     
     /* descending (>) | ascending (<) */
-    return  thread_calc_priority (thread_a) >  thread_calc_priority (thread_b);
+    return  thread_calc_priority (thread_a) <=  thread_calc_priority (thread_b);
   } 
 
 /* Called by the timer interrupt handler at each timer tick.
@@ -583,7 +583,7 @@ next_thread_to_run (void)
   if (list_empty (&ready_list))
     return idle_thread;
   else
-    return list_entry (list_pop_front (&ready_list), struct thread, elem);
+    return list_entry (list_pop_back (&ready_list), struct thread, elem);
 }
 
 /* This function peeks the thread with the highest priority in
@@ -595,7 +595,7 @@ thread_top (void) {
   if (list_empty (&ready_list))
     return idle_thread;
   else
-    return list_entry (list_begin (&ready_list), struct thread, elem);
+    return list_entry (list_back (&ready_list), struct thread, elem);
 }
 
 /* Completes a thread switch by activating the new thread's page
