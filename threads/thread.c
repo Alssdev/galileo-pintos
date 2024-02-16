@@ -654,11 +654,12 @@ thread_schedule_tail (struct thread *prev)
 static void
 schedule (void) 
 {
+  ASSERT (intr_get_level () == INTR_OFF);
+
   struct thread *cur = running_thread ();
   struct thread *next = next_thread_to_run ();
   struct thread *prev = NULL;
 
-  ASSERT (intr_get_level () == INTR_OFF);
   ASSERT (cur->status != THREAD_RUNNING);
   ASSERT (is_thread (next));
 
