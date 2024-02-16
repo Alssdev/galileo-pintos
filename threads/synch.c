@@ -68,7 +68,7 @@ sema_down (struct semaphore *sema)
   old_level = intr_disable ();
   while (sema->value == 0) 
     {
-      list_insert_ordered (&sema->waiters, &thread_current ()->elem, &thread_less_func, NULL);
+      list_push_front (&sema->waiters, &thread_current ()->elem);
       thread_block ();
     }
   sema->value--;
@@ -109,12 +109,21 @@ void
 sema_up (struct semaphore *sema) 
 {
   ASSERT (sema != NULL);
-
+  
   enum intr_level old_level = intr_disable ();
   
+  // increment sema value
   sema->value++;
+
+  // wake up a waiter
   if (!list_empty (&sema->waiters)) {
-    struct thread *next_waiter = list_entry (list_pop_back (&sema->waiters), struct thread, elem);
+    // find thread with the highest priority
+    struct thread *next_waiter = list_entry (list_max (&sema->waiters, &thread_less_func, NULL), struct thread, elem);
+    
+    // remove from waiters list
+    list_remove(&next_waiter->elem);
+    
+    // complete wake up!
     thread_unblock(next_waiter);
   } 
 
@@ -221,9 +230,10 @@ lock_acquire (struct lock *lock)
   /* is lock available? */
   if (!lock_try_acquire (lock)) {
     // donate priority to decrement waiting time.
-    lock_donate_priority (lock);
+    lock_donate_priority (lock, thread_get_priority ());
 
     // start waiting...
+    thread_current ()->waiting_for_lock = lock;
     sema_down (&lock->semaphore);
 
     // set lock as mine
@@ -237,7 +247,7 @@ lock_acquire (struct lock *lock)
 }
 
 void
-lock_donate_priority (struct lock *lock)
+lock_donate_priority (struct lock *lock, int priority)
 {
   ASSERT(intr_get_level () == INTR_OFF);
   ASSERT(lock->holder != NULL);
@@ -245,15 +255,12 @@ lock_donate_priority (struct lock *lock)
   // donation
   struct donation_list_elem d_elem;
   d_elem.lock = lock;
-  d_elem.priority = thread_get_priority ();
-  list_push_front(&lock->holder->donation_list, &d_elem.elem);
-
-  // waiting for ...
-  thread_current ()->waiting_for_lock = lock;
+  d_elem.priority = priority;
+  list_insert_ordered(&lock->holder->donation_list, &d_elem.elem, &donation_less_func, NULL);
 
   // nested donations
   if (lock->holder->waiting_for_lock != NULL) {
-    lock_donate_priority (lock->holder->waiting_for_lock);
+    lock_donate_priority (lock->holder->waiting_for_lock, priority);
   }
 }
 
@@ -263,7 +270,7 @@ donation_less_func (const struct list_elem *a, const struct list_elem *b, void *
   struct donation_list_elem *elem_a = list_entry(a, struct donation_list_elem, elem);
   struct donation_list_elem *elem_b = list_entry(b, struct donation_list_elem, elem);
 
-  return elem_a->priority < elem_b->priority;
+  return elem_a->priority <= elem_b->priority;
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -299,14 +306,13 @@ lock_release (struct lock *lock)
   ASSERT (thread_current ()->waiting_for_lock == NULL);
 
   struct list *donation_list = &thread_current ()->donation_list;
-  //if (!list_empty(donation_list)) { TODO: verificar si esto afecta o no
-    struct list_elem *e;
-    for (e = list_begin (donation_list); e != list_end (donation_list); e = list_next (e)) {
-      struct donation_list_elem *d_elem = list_entry(e, struct donation_list_elem, elem); 
-      if (d_elem->lock == lock)
-        list_remove(e);
-    }
-  //}
+
+  struct list_elem *e;
+  for (e = list_begin (donation_list); e != list_end (donation_list); e = list_next (e)) {
+    struct donation_list_elem *d_elem = list_entry(e, struct donation_list_elem, elem); 
+    if (d_elem->lock == lock)
+      list_remove(e);
+  }
   
   lock->holder = NULL;
   sema_up (&lock->semaphore);

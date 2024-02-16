@@ -161,6 +161,8 @@ awake_sleeping_thread (int64_t ticks)
  * list sort, this function produces a descending ordered list. */
 bool thread_less_func (const struct list_elem *a, const struct list_elem *b, void *aux)
   {
+    ASSERT (intr_get_level () == INTR_OFF);
+
     struct thread *thread_a = list_entry(a, struct thread, elem);
     struct thread *thread_b = list_entry(b, struct thread, elem);
     
@@ -409,19 +411,16 @@ thread_set_priority (int new_priority)
 int
 thread_calc_priority (struct thread *t)
 {
-  // calc max in t->donation_list
   ASSERT(t != NULL);
-  
+
   if (!list_empty(&t->donation_list)) {
     // debug
-    struct list_elem *elem = list_max(&t->donation_list, &donation_less_func, NULL);
-    int highest_received_priority = list_entry(elem, struct donation_list_elem, elem)->priority;
+    int highest_received_priority = list_entry(list_back(&t->donation_list), struct donation_list_elem, elem)->priority;
     
     if (t->priority <= highest_received_priority)
       return highest_received_priority;
   }
 
-  
   return t->priority;
 }
 /* Returns the current thread's priority. */
@@ -550,6 +549,7 @@ init_thread (struct thread *t, const char *name, int priority)
   t->priority = priority;
   
   /* init internal lists */
+  t->waiting_for_lock = NULL;
   list_init(&t->donation_list);
 
   t->magic = THREAD_MAGIC;
