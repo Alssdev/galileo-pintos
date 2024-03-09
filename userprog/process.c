@@ -38,6 +38,21 @@ process_execute (const char *file_name)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
 
+  /* El parametro file_name en realidad no es solo el nombre del
+   * archio, sino que contiene tambien los argumentos. Por ejemplo
+   *  
+   *      file_name = "user_program arg1 arg2 arg3 arg4"
+   *
+   * En la linea de abajo puedes ver que thread_create recibe a file_name
+   * como argumento.
+   *
+   * TODO: hacer que thread_create reciba UNICAMENTE el nombre del archivo
+   * sin los argumentos. Revisar si no hay metodos para eso. A fn_copy
+   * no lo toque.
+   * */
+
+  /* Your code here */
+
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
