@@ -15,11 +15,23 @@
 #include "threads/init.h"
 #include "threads/interrupt.h"
 #include "threads/palloc.h"
+#include "threads/malloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
+
+/* argument passing struct */
+struct filename_args {
+  char *file_name;             /* filename. */
+  char *fn_copy;              /* filename copy*/
+  struct list *args;           /* list of arg_elem */
+};
+struct arg_elem {
+  struct list_elem elem;
+  char *argument;
+};
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -28,15 +40,18 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
 tid_t
 process_execute (const char *file_name) 
 {
-  char *fn_copy;
+  // char *fn_copy;
+  // TODO: ask to edson differences between palloc_get_page and malloc (threads/malloc.h)
+  /* allocate filename_args */
+  struct filename_args *fn_args = malloc(sizeof(struct filename_args));
   tid_t tid;
 
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
-  fn_copy = palloc_get_page (0);
-  if (fn_copy == NULL)
-    return TID_ERROR;
-  strlcpy (fn_copy, file_name, PGSIZE);
+  // fn_args->fn_copy = palloc_get_page (0);
+  // if (fn_args->fn_copy == NULL)
+    // return TID_ERROR;
+  // strlcpy (fn_args->fn_copy, file_name, PGSIZE);
 
   /* El parametro file_name en realidad no es solo el nombre del
    * archio, sino que contiene tambien los argumentos. Por ejemplo
@@ -48,24 +63,57 @@ process_execute (const char *file_name)
    *
    * TODO: hacer que thread_create reciba UNICAMENTE el nombre del archivo
    * sin los argumentos. Revisar si no hay metodos para eso. A fn_copy
-   * no lo toque.
-   * */
+   * no lo toque.*/
 
   /* Your code here */
+  int str_len;
+  char *file_name_copy;
+
+  /* create a modificable copy of file_name. */
+  str_len = strlen(file_name);                        /* get file_name raw length */
+  file_name_copy = malloc (str_len + 1);              /* reserve mem for file_name_copy */
+  if (file_name_copy == NULL)
+    return TID_ERROR;                                 /* allocation fail */
+  strlcpy (file_name_copy, file_name, str_len + 1);   /* store a copy of file_name */
+  
+  char *token, *save_ptr;
+
+  /* copying filename */
+  token = strtok_r(file_name_copy, " ", &save_ptr);   /* separate real file_name from file_name raw */
+  str_len = strlen(token);                            /* len of real file_name */
+  fn_args->file_name = malloc(str_len + 1);           /* reserve token_len bytes in memory */
+  strlcpy(fn_args->file_name, token, str_len + 1);    /* store a copy of file_name */
+
+  /* init args list */
+  fn_args->args = malloc(sizeof(struct list));      /* reserve memory for args list */
+  list_init(fn_args->args);                         /* init args list */
+
+  /* creating a list of arg_elem */
+  for (token = strtok_r (NULL, " ", &save_ptr); token != NULL;
+    token = strtok_r (NULL, " ", &save_ptr)) {
+    str_len = strlen(token);                                    /* len of arg */
+    struct arg_elem *elem = malloc(sizeof(struct arg_elem));    /* reserve mem for arg_elem */
+    elem->argument = malloc(str_len + 1);                       /* reserve mem for arg_elem->argument */
+    strlcpy(elem->argument, token, str_len + 1);                /* store a copy of arg */
+  }
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
-  if (tid == TID_ERROR)
-    palloc_free_page (fn_copy); 
+  tid = thread_create (fn_args->file_name, PRI_DEFAULT, start_process, fn_args);
+  if (tid == TID_ERROR) {
+    palloc_free_page (fn_args->fn_copy);
+    // TODO: free all reserved memory
+    // do args_elem->argument should be deallocated?
+  }
   return tid;
 }
 
 /* A thread function that loads a user process and starts it
    running. */
 static void
-start_process (void *file_name_)
+start_process (void *fn_args_)
 {
-  char *file_name = file_name_;
+  // char *file_name = file_name_;
+  struct filename_args *fn_args = fn_args_;
   struct intr_frame if_;
   bool success;
 
@@ -74,10 +122,10 @@ start_process (void *file_name_)
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
-  success = load (file_name, &if_.eip, &if_.esp);
+  success = load (fn_args->file_name, &if_.eip, &if_.esp);
 
   /* If load failed, quit. */
-  palloc_free_page (file_name);
+  free(fn_args->file_name);
   if (!success) 
     thread_exit ();
 
