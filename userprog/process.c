@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "list.h"
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
@@ -24,9 +25,8 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
 /* argument passing struct */
 struct filename_args {
-  char *file_name;             /* filename. */
-  char *fn_copy;              /* filename copy*/
-  struct list *args;           /* list of arg_elem */
+  char *file_name;              /* filename. */
+  struct list *args;            /* list of arg_elem */
 };
 struct arg_elem {
   struct list_elem elem;
@@ -40,18 +40,10 @@ struct arg_elem {
 tid_t
 process_execute (const char *file_name) 
 {
-  // char *fn_copy;
   // TODO: ask to edson differences between palloc_get_page and malloc (threads/malloc.h)
   /* allocate filename_args */
   struct filename_args *fn_args = malloc(sizeof(struct filename_args));
   tid_t tid;
-
-  /* Make a copy of FILE_NAME.
-     Otherwise there's a race between the caller and load(). */
-  // fn_args->fn_copy = palloc_get_page (0);
-  // if (fn_args->fn_copy == NULL)
-    // return TID_ERROR;
-  // strlcpy (fn_args->fn_copy, file_name, PGSIZE);
 
   /* El parametro file_name en realidad no es solo el nombre del
    * archio, sino que contiene tambien los argumentos. Por ejemplo
@@ -66,44 +58,47 @@ process_execute (const char *file_name)
    * no lo toque.*/
 
   /* Your code here */
-  int str_len;
   char *file_name_copy;
 
   /* create a modificable copy of file_name. */
-  str_len = strlen(file_name);                        /* get file_name raw length */
-  file_name_copy = malloc (str_len + 1);              /* reserve mem for file_name_copy */
-  if (file_name_copy == NULL)
-    return TID_ERROR;                                 /* allocation fail */
-  strlcpy (file_name_copy, file_name, str_len + 1);   /* store a copy of file_name */
+  file_name_copy = malloc (strlen(file_name) + 1);                  /* reserve mem for file_name_copy */
+  ASSERT(file_name_copy != NULL);
+  strlcpy (file_name_copy, file_name, strlen(file_name_copy) + 1);  /* store a copy of file_name */
   
   char *token, *save_ptr;
 
   /* copying filename */
-  token = strtok_r(file_name_copy, " ", &save_ptr);   /* separate real file_name from file_name raw */
-  str_len = strlen(token);                            /* len of real file_name */
-  fn_args->file_name = malloc(str_len + 1);           /* reserve token_len bytes in memory */
-  strlcpy(fn_args->file_name, token, str_len + 1);    /* store a copy of file_name */
+  token = strtok_r(file_name_copy, " ", &save_ptr);                   /* separate real file_name from file_name raw */
+  fn_args->file_name = malloc(strlen(token) + 1);                     /* reserve token_len bytes in memory */
+  ASSERT(fn_args->file_name != NULL);
+  strlcpy(fn_args->file_name, token, strlen(fn_args->file_name) + 1); /* store a copy of file_name */
 
   /* init args list */
-  fn_args->args = malloc(sizeof(struct list));      /* reserve memory for args list */
+  fn_args->args = malloc(sizeof(struct list));      /* reserve memory for args list */ 
+  // ASSERT(fn_args->args != NULL);                 /* this ASSERT is in list_init already */
   list_init(fn_args->args);                         /* init args list */
 
   /* creating a list of arg_elem */
   for (token = strtok_r (NULL, " ", &save_ptr); token != NULL;
-    token = strtok_r (NULL, " ", &save_ptr)) {
-    str_len = strlen(token);                                    /* len of arg */
+      token = strtok_r (NULL, " ", &save_ptr)) {
     struct arg_elem *elem = malloc(sizeof(struct arg_elem));    /* reserve mem for arg_elem */
-    elem->argument = malloc(str_len + 1);                       /* reserve mem for arg_elem->argument */
-    strlcpy(elem->argument, token, str_len + 1);                /* store a copy of arg */
+    ASSERT(elem != NULL);
+    
+    elem->argument = malloc(strlen(token) + 1);                       /* reserve mem for arg_elem->argument */
+    ASSERT(elem->argument != NULL);
+    
+    strlcpy(elem->argument, token, strlen(elem->argument) + 1);                /* store a copy of arg */
+    list_push_front(fn_args->args, &elem->elem);
   }
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (fn_args->file_name, PRI_DEFAULT, start_process, fn_args);
   if (tid == TID_ERROR) {
-    palloc_free_page (fn_args->fn_copy);
-    // TODO: free all reserved memory
+    // TODO: free mem of fn_args
     // do args_elem->argument should be deallocated?
   }
+
+  free(file_name_copy);
   return tid;
 }
 
@@ -125,7 +120,8 @@ start_process (void *fn_args_)
   success = load (fn_args->file_name, &if_.eip, &if_.esp);
 
   /* If load failed, quit. */
-  free(fn_args->file_name);
+  // TODO: free mem of fn_args_
+  // free(fn_args->file_name);
   if (!success) 
     thread_exit ();
 
