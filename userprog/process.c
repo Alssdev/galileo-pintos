@@ -1,19 +1,18 @@
+// #define DEBUG
 #include "userprog/process.h"
 #include <debug.h>
 #include <inttypes.h>
 #include <round.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "list.h"
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
-#include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
 #include "threads/flags.h"
-#include "threads/init.h"
 #include "threads/interrupt.h"
 #include "threads/palloc.h"
 #include "threads/malloc.h"
@@ -23,7 +22,7 @@
 /* argument passing struct */
 struct filename_args {
   char *file_name;              /* filename. */
-  char *args;                /* raw filename */
+  char *args;                   /* cmdlines without filename. */
 };
 
 static thread_func start_process NO_RETURN;
@@ -118,7 +117,10 @@ start_process (void *fn_args_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
-  return -1;
+  /* dummy wait */
+  while (true) {
+    thread_yield();
+  }
 }
 
 /* Free the current process's resources. */
@@ -468,19 +470,66 @@ setup_stack (void **esp, struct filename_args *fn_args)
     success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
     if (success) {
       *esp = PHYS_BASE;
+      
+      // TODO: cual debe ser el MAX_ARGS_LEN?
+      uintptr_t arg_addrs[MAX_ARGS_LEN];
+      uint8_t arg_i = 0;                            /* utinX_t must be enought for MAX_ARG_LEN */
+      uint32_t args_len = 0;
+     
+      char *token, *save_ptr;
 
-      /* creating a list of arg_elem */
-      //for (token = strtok_r (NULL, " ", &save_ptr); token != NULL;
-      //    token = strtok_r (NULL, " ", &save_ptr)) {
-      //  struct arg_elem *elem = malloc(sizeof(struct arg_elem));        /* reserve mem for arg_elem */
-      //  ASSERT(elem != NULL);
-      //  
-      //  elem->argument = malloc(strlen(token) + 1);                     /* reserve mem for arg_elem->argument */
-      //  ASSERT(elem->argument != NULL);
-      //  
-      //  strlcpy(elem->argument, token, strlen(elem->argument) + 1);     /* store a copy of arg */
-      //  list_push_front(fn_args->args, &elem->elem);
-      //}
+      #ifdef DEBUG
+        uintptr_t start = (uintptr_t)*esp;
+      #endif 
+
+      /* adding filename to the top of the stack. */
+      *esp -= strlen(fn_args->file_name) + 1;
+      memcpy(*esp, fn_args->file_name, strlen(fn_args->file_name) + 1);
+      arg_addrs[arg_i++] = (uintptr_t)*esp;
+
+      /* adding args to the top of the stack. */
+      for (token = strtok_r (fn_args->args, " ", &save_ptr); token != NULL;
+          token = strtok_r (NULL, " ", &save_ptr)) {
+        
+        /* same as adding filename to the top of the stack. */
+        *esp -= strlen(token) + 1;
+        memcpy(*esp, token, strlen(token) + 1);
+        arg_addrs[arg_i++] = (uintptr_t)*esp;
+      }
+
+      args_len = arg_i;
+
+      /* word align */
+      *esp -= (uint32_t)*esp % 4;
+      memset(*esp, 0x0, arg_addrs[arg_i - 1] - (uintptr_t)*esp);
+
+      /* sentinel */
+      *esp -= 4;
+      memset(*esp, 0x0, 4);
+
+      for ( /* void */ ; arg_i > 0; arg_i--) {
+        *esp -= sizeof(char*);
+        memcpy(*esp, &arg_addrs[arg_i - 1], sizeof(char*));
+      }
+
+      /* add argv to the top of the stack */
+      uintptr_t argv = (uintptr_t)*esp;
+      *esp -= sizeof(char**);
+      memcpy(*esp, &argv, sizeof(char**));
+
+      /* ardd argc */
+      *esp -= 4;
+      memcpy(*esp, &args_len, 4);
+
+      /* add a NULL pointer as return adderss */
+      *esp -= sizeof(char**);
+      memset(*esp, 0, sizeof(char**));
+
+      #ifdef DEBUG
+        char buf[start - (uint32_t)*esp + 1];
+        memcpy(buf, *esp, start - (uint32_t)*esp);
+        hex_dump((int)*esp, buf, start - (uintptr_t)*esp, true);
+      #endif
     } else {
       palloc_free_page (kpage);
     }
