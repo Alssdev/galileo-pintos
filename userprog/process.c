@@ -1,4 +1,3 @@
-// #define DEBUG
 #include "userprog/process.h"
 #include <debug.h>
 #include <inttypes.h>
@@ -35,7 +34,6 @@ static bool load (struct filename_args *fn_args, void (**eip) (void), void **esp
 tid_t
 process_execute (const char *cmdline) 
 {
-  // TODO: ask to edson differences between palloc_get_page and malloc (threads/malloc.h)
   int str_len;
   char *cmdline_copy;
   char *token, *save_ptr;
