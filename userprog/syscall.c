@@ -69,7 +69,6 @@ write_handler (struct intr_frame *f)
     unsigned size = (unsigned)stack_arg(f->esp, 3);
 
     /* putbuf prints to the console */
-    // TODO: putbuf has its own lock in its definition, is lock_console still needed?
     lock_acquire(&lock_console);
     putbuf(buffer, size);
     lock_release(&lock_console);
@@ -90,6 +89,5 @@ static void exit_handler (struct intr_frame *f) {
 }
 
 static void halt_handler (void) {
-  // TODO: asegurarnos de esto 
   shutdown_power_off();
 }

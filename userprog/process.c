@@ -91,8 +91,6 @@ start_process (void *fn_args_)
   success = load (fn_args, &if_.eip, &if_.esp);
 
   /* If load failed, quit. */
-  // TODO: free mem of fn_args_
-  // free(fn_args->file_name);
   if (!success) 
     thread_exit ();
 
@@ -477,7 +475,6 @@ setup_stack (void **esp, struct filename_args *fn_args)
     if (success) {
       *esp = PHYS_BASE;
       
-      // TODO: cual debe ser el MAX_ARGS_LEN?
       uintptr_t arg_addrs[MAX_ARGS_LEN];
       uint8_t arg_i = 0;                            /* utinX_t must be enought for MAX_ARG_LEN */
       uint32_t args_len = 0;
