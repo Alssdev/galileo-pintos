@@ -1,6 +1,6 @@
 #ifndef USERPROG_PROCESS_H
 #define USERPROG_PROCESS_H
-#define MAX_ARGS_LEN 20
+#define MAX_ARGS_LEN 100
 #include "threads/thread.h"
 
 tid_t process_execute (const char *file_name);

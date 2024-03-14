@@ -1,4 +1,3 @@
-// #define DEBUG
 #include "userprog/process.h"
 #include <debug.h>
 #include <inttypes.h>
@@ -24,7 +23,8 @@
 /* argument passing struct */
 struct filename_args {
   char *file_name;              /* filename. */
-  char *args;                   /* cmdlines without filename. */
+  char *cmdline_copy;           /* a copy of cmdlines */
+  char *args;                   /* reference of the start of args in cmdline_copy */
 };
 
 static thread_func start_process NO_RETURN;
@@ -37,37 +37,38 @@ static bool load (struct filename_args *fn_args, void (**eip) (void), void **esp
 tid_t
 process_execute (const char *cmdline) 
 {
-  // TODO: ask to edson differences between palloc_get_page and malloc (threads/malloc.h)
   int str_len;
-  char *cmdline_copy;
   char *token, *save_ptr;
   
   /* allocate filename_args */
   tid_t tid;
   struct filename_args *fn_args = malloc(sizeof(struct filename_args));
 
+  // TODO: is correct to use ASSERTS instead if(...) return TID_ERROR ?
+
   /* creating a modificable copy of cmdline. */
-  str_len = strlen(cmdline);                                /* len of cmdline string */
-  cmdline_copy = malloc (str_len + 1);                      /* reserve mem for file_name_copy, + 1 because of \0 */
-  ASSERT(cmdline_copy != NULL);
-  strlcpy (cmdline_copy, cmdline, str_len + 1);             /* create the copy of file_name */
+  str_len = strlen(cmdline);                                  /* len of cmdline string */
+  fn_args->cmdline_copy = malloc (str_len + 1);               /* reserve mem for file_name_copy, + 1 because of \0 */
+  ASSERT(fn_args->cmdline_copy != NULL);
+  strlcpy (fn_args->cmdline_copy, cmdline, str_len + 1);      /* create the copy of file_name */
 
   /* extracting filename from cmdline param. */
-  token = strtok_r(cmdline_copy, " ", &save_ptr);           /* separating filename from cmdline param. */
-  str_len = strlen(token);                                  /* len of filename string. */
-  fn_args->file_name = malloc(str_len + 1);                 /* reserve mem for fn_args->filename, + 1 because of \0 */
+  token = strtok_r(fn_args->cmdline_copy, " ", &save_ptr);    /* separating filename from cmdline param. */
+  str_len = strlen(token);                                    /* len of filename string. */
+  fn_args->file_name = malloc(str_len + 1);                   /* reserve mem for fn_args->filename, + 1 because of \0 */
   ASSERT(fn_args->file_name != NULL);
-  strlcpy(fn_args->file_name, token, str_len + 1);          /* create the copy of filename */
+  strlcpy(fn_args->file_name, token, str_len + 1);            /* create the copy of filename */
 
   /* creating a copy of cmdline args. */
-  fn_args->args = save_ptr;                                 /* pass as reference only, because cmdline_copy is a copy already
+  fn_args->args = save_ptr;                                   /* pass as reference only, because cmdline_copy is a copy already
                                                                and isn't needed any more.*/ 
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (fn_args->file_name, PRI_DEFAULT, start_process, fn_args);
   if (tid == TID_ERROR) {
     /* free mem, otherwise, start_process will free mem. */
-    free(cmdline_copy);
+    free(fn_args->cmdline_copy);
+    free(fn_args->file_name);
     free(fn_args);
   }
 
@@ -96,6 +97,11 @@ start_process (void *fn_args_)
   // free(fn_args->file_name);
   if (!success) 
     thread_exit ();
+
+  /* free mem */
+  free(fn_args->cmdline_copy);
+  free(fn_args->file_name);
+  free(fn_args);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
