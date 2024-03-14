@@ -18,6 +18,8 @@
 #include "threads/malloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "threads/synch.h"
+#include "lib/kernel/list.h"
 
 /* argument passing struct */
 struct filename_args {
@@ -115,12 +117,28 @@ start_process (void *fn_args_)
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid) 
 {
-  /* dummy wait */
-  while (true) {
-    thread_yield();
+  struct thread *child, *current;
+  struct semaphore *sema;
+  current = thread_current();
+  
+  /*Getting thread with id = child_id*/
+  for(struct list_elem *e = list_begin(thread_list()); e = list_end(thread_list()); e = list_next(e))
+  {
+    struct thread *t = list_entry (e, struct thread, allelem);
+    if (t->tid = child_tid){
+      child = t;
+    }
   }
+
+  if(child == NULL || child->awake_on_ticks >0)
+    return WAIT_ERROR; 
+  
+  sema_init(&sema, 0);
+  
+
+  
 }
 
 /* Free the current process's resources. */

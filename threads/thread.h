@@ -23,6 +23,7 @@ typedef int tid_t;
 #define PRI_MIN 0                       /* Lowest priority. */
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
+#define WAIT_ERROR  (-1)                /* Error return from wait()
 
 /* A kernel thread or user process.
 
@@ -92,17 +93,34 @@ struct thread
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
+    struct list children_list;          /* List element for children to execute*/
+    struct thread* parent; 
+    int exit_status;
     
     /* this represents the ticks number when the thread must awake  */
-    int64_t awake_on_ticks;
+    int64_t awake_on_ticks;    
+    struct process_child *child_waiting;         
+
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
+    struct semaphore wait;
+    
 #endif 
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
+  };
+
+  /* Struct that holds information about a element in a children_list */
+  struct process_child{
+      struct thread *t;                  /* Thread in list_elem */
+      struct list_elem elem;            /* list element */
+      int exit_status;                  /* exit statis for t */
+      /* indicates if the process should wait for this child to finish execution */
+      bool waiting;
+      struct semaphore sema_wait;       /* semaphore on waiting */
   };
 
 /* If false (default), use round-robin scheduler.
@@ -144,5 +162,6 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+struct list *thread_list();
 
 #endif /* threads/thread.h */
