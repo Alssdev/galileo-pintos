@@ -7,6 +7,7 @@
 #include "threads/thread.h"
 #include "threads/synch.h"
 #include "userprog/process.h"
+#include "filesys/off_t.h"
 
 static void syscall_handler (struct intr_frame *);
 static uint32_t stack_arg (void *esp, uint8_t offset);
@@ -17,6 +18,9 @@ static void exit_handler (struct intr_frame *);
 static void exec_handler (struct intr_frame *);
 static void halt_handler (void);
 static void wait_handler (struct intr_frame *);
+static void remove_handler(struct intr_frame *f);
+static void create_handler(struct intr_frame *f);
+
 
 void
 syscall_init (void)
@@ -47,6 +51,12 @@ syscall_handler (struct intr_frame *f)
 
     case SYS_WAIT:
       wait_handler (f);
+      break;
+    case SYS_REMOVE:
+      remove_handler(f);
+      break;
+    case SYS_CREATE:
+      create_handler(f);
       break;
 
     default:
@@ -106,4 +116,15 @@ static void wait_handler (struct intr_frame *f) {
   tid_t tid = stack_arg(f->esp, 1);
   int exit_status = process_wait(tid);
   f->eax = exit_status;
+}
+
+static void remove_handler(struct intr_frame *f){
+  char *name = stack_arg(f->esp, 1);
+  f->eax = filesys_remove(name);
+}
+
+static void create_handler(struct intr_frame *f){
+  char* name = stack_arg(f->esp, 1);
+  off_t init_size = stack_arg(f->esp, 2);
+  f->eax = filesys_create(name, init_size);
 }
