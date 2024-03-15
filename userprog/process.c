@@ -23,6 +23,13 @@
 static thread_func start_process NO_RETURN;
 static bool load (struct filename_args *fn_args, void (**eip) (void), void **esp);
 
+/* locks */
+struct lock wait_lock;            /* this lock is used to synchronize process_exit () and process_wait () */
+
+// TODO: explain this function with a comment.
+void process_init_locks (void) {
+  lock_init (&wait_lock);
+}
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -36,20 +43,22 @@ process_execute (const char *cmdline)
   /* allocate filename_args */
   tid_t tid;
   struct filename_args *fn_args = malloc(sizeof(struct filename_args));
-
-  // TODO: is correct to use ASSERTS instead if(...) return TID_ERROR ?
-
+ 
   /* creating a modificable copy of cmdline. */
   str_len = strlen(cmdline);                                  /* len of cmdline string */
   fn_args->cmdline_copy = malloc (str_len + 1);               /* reserve mem for file_name_copy, + 1 because of \0 */
-  ASSERT(fn_args->cmdline_copy != NULL);
+  if (fn_args->cmdline_copy == NULL)
+    return TID_ERROR;
   strlcpy (fn_args->cmdline_copy, cmdline, str_len + 1);      /* create the copy of file_name */
 
   /* extracting filename from cmdline param. */
   token = strtok_r(fn_args->cmdline_copy, " ", &save_ptr);    /* separating filename from cmdline param. */
   str_len = strlen(token);                                    /* len of filename string. */
   fn_args->file_name = malloc(str_len + 1);                   /* reserve mem for fn_args->filename, + 1 because of \0 */
-  ASSERT(fn_args->file_name != NULL);
+  if (fn_args->file_name == NULL) {
+    free (fn_args->cmdline_copy);
+    return TID_ERROR;
+  }
   strlcpy(fn_args->file_name, token, str_len + 1);            /* create the copy of filename */
 
   /* creating a copy of cmdline args. */
@@ -115,12 +124,16 @@ start_process (void *fn_args_)
 int
 process_wait (tid_t child_tid) 
 {
+  enum intr_level old_level = intr_disable ();            /* dummy synchronization */
+
   struct thread *thread_child = thread_find (child_tid);  /* try to find child process */
   if (thread_child == NULL)                               /* TODO: is an invalid child_tid ? */
     return -1;
 
   /* TODO: add a WAIT_LOCK lock here */
   sema_down(&thread_child->wait_sema);                    /* wait simulation */
+
+  intr_set_level(old_level);
   return thread_current ()->child_exit_status;            /* when `this` thread wakes up
                                                           child's exit status will be placed
                                                           in child_exit_status.*/
@@ -130,6 +143,8 @@ process_wait (tid_t child_tid)
 void
 process_exit (void)
 {
+  enum intr_level old_level = intr_disable ();            /* dummy synchronization */
+
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
@@ -137,9 +152,7 @@ process_exit (void)
   printf ("%s: exit(%d)\n", cur->name, cur->my_exit_status);
   
   /* TODO: add WAIT_LOCK lock here */
-  enum intr_level old_level = intr_disable();             /* dumy synchronization. */
   struct semaphore *wait_sema = &cur->wait_sema;          /* just a short reference. */
-
 
   /* TODO: many process can wait for a same process? */
   /* saving my_exit_status in all waiters */
@@ -152,12 +165,11 @@ process_exit (void)
     thread->child_exit_status = cur->my_exit_status;      /* pass my exit_status. */
   }
 
-  while (!list_empty(&wait_sema->waiters)) 
+  while (!list_empty (&wait_sema->waiters)) 
   {
-    sema_up(wait_sema);                                   /* wakes up a waiter. */
+    sema_up (wait_sema);                                   /* wakes up a waiter. */
   }
-  intr_set_level(old_level);
-
+  intr_set_level (old_level);
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;

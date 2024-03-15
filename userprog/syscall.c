@@ -6,6 +6,7 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/synch.h"
+#include "userprog/process.h"
 
 static void syscall_handler (struct intr_frame *);
 static uint32_t stack_arg (void *esp, uint8_t offset);
@@ -13,7 +14,9 @@ static uint32_t stack_arg (void *esp, uint8_t offset);
 /* handlers */
 static void write_handler (struct intr_frame *);
 static void exit_handler (struct intr_frame *);
+static void exec_handler (struct intr_frame *);
 static void halt_handler (void);
+static void wait_handler (struct intr_frame *);
 
 void
 syscall_init (void)
@@ -36,6 +39,14 @@ syscall_handler (struct intr_frame *f)
  
     case SYS_WRITE:
       write_handler (f);
+      break;
+
+    case SYS_EXEC:
+      exec_handler (f);
+      break;
+
+    case SYS_WAIT:
+      wait_handler (f);
       break;
 
     default:
@@ -76,8 +87,8 @@ write_handler (struct intr_frame *f)
 }
 
 static void exit_handler (struct intr_frame *f) {
-  uint32_t exit_code = stack_arg(f->esp, 1);            /* read exit code from stack. */
-  thread_current ()->my_exit_status = exit_code;        /* set my own exit status. */
+  uint32_t exit_status = stack_arg(f->esp, 1);            /* read exit code from stack. */
+  thread_current ()->my_exit_status = exit_status;        /* set my own exit status. */
   thread_exit ();
 }
 
@@ -85,3 +96,14 @@ static void halt_handler (void) {
   shutdown_power_off();               /* bye bye */
 }
 
+static void exec_handler (struct intr_frame *f) {
+  char* cmd_line = (char*)stack_arg(f->esp, 1);
+  tid_t tid = process_execute(cmd_line);
+  f->eax = tid;
+}
+
+static void wait_handler (struct intr_frame *f) {
+  tid_t tid = stack_arg(f->esp, 1);
+  int exit_status = process_wait(tid);
+  f->eax = exit_status;
+}
