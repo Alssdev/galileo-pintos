@@ -16,14 +16,10 @@ static void exit_handler (struct intr_frame *);
 static void halt_handler (void);
 
 /* locks */
-struct lock lock_console;
 
 void
 syscall_init (void)
 {
-  /* locks init */
-  lock_init(&lock_console);
-
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
@@ -39,7 +35,7 @@ syscall_handler (struct intr_frame *f)
     case SYS_EXIT:
       exit_handler (f);
       break;
-    
+ 
     case SYS_WRITE:
       write_handler (f);
       break;
@@ -69,9 +65,7 @@ write_handler (struct intr_frame *f)
     unsigned size = (unsigned)stack_arg(f->esp, 3);
 
     /* putbuf prints to the console */
-    lock_acquire(&lock_console);
     putbuf(buffer, size);
-    lock_release(&lock_console);
 
     /* return size by eax = size */
     f->eax = size;
@@ -83,7 +77,8 @@ write_handler (struct intr_frame *f)
 
 static void exit_handler (struct intr_frame *f) {
   // TODO: return exit code
-  // wake up processes waiting for thread_current
+  thread_current ()->my_exit_status = stack_arg(f->esp, 1);
+  printf ("%s: exit(%d)\n", thread_current()->name, thread_current()->my_exit_status);
   thread_exit ();
   ASSERT(false); /* this code must not be executed */
 }

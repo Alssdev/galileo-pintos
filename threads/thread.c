@@ -9,6 +9,7 @@
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
 #include "threads/palloc.h"
+#include "threads/malloc.h"
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
@@ -224,6 +225,10 @@ thread_create (const char *name, int priority,
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
 
+#ifdef USERPROG
+  t->parent_tid = ((struct filename_args *)(aux))->parent_tid;
+#endif /* ifdef USERPROG */
+
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
   kf->eip = NULL;
@@ -245,6 +250,22 @@ thread_create (const char *name, int priority,
   return tid;
 }
 
+// TODO: explain with a comment
+struct thread*
+thread_find (tid_t tid)
+{
+  struct thread *thread = NULL;
+  struct list_elem *e;
+  for (e = list_begin (&all_list); e != list_end (&all_list);
+           e = list_next (e))
+  {
+    thread = list_entry (e, struct thread, allelem);
+    if (thread->tid == tid)
+      return thread;
+  } 
+
+  return NULL;
+}
 /* Puts the current thread to sleep.  It will not be scheduled
    again until awoken by thread_unblock().
 
@@ -416,7 +437,7 @@ thread_get_recent_cpu (void)
   /* Not yet implemented. */
   return 0;
 }
-
+
 /* Idle thread.  Executes when no other thread is ready to run.
 
    The idle thread is initially put on the ready list by
@@ -503,6 +524,15 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+  
+  /* init internel structs */
+#ifdef USERPROG
+  sema_init(&t->wait_sema, 0);
+  t->child_exit_status = 0;
+  t->my_exit_status = 0;
+#endif /* ifdef USERPROG */
+
+
   t->magic = THREAD_MAGIC;
 
   old_level = intr_disable ();

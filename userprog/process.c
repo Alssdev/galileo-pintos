@@ -6,6 +6,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "list.h"
+#include "threads/synch.h"
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
@@ -17,13 +19,6 @@
 #include "threads/malloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
-
-/* argument passing struct */
-struct filename_args {
-  char *file_name;              /* filename. */
-  char *cmdline_copy;           /* a copy of cmdlines */
-  char *args;                   /* reference of the start of args in cmdline_copy */
-};
 
 static thread_func start_process NO_RETURN;
 static bool load (struct filename_args *fn_args, void (**eip) (void), void **esp);
@@ -61,6 +56,9 @@ process_execute (const char *cmdline)
   fn_args->args = save_ptr;                                   /* pass as reference only, because cmdline_copy is a copy already
                                                                and isn't needed any more.*/ 
 
+  /* set parent_tid */
+  fn_args->parent_tid = thread_current ()->tid;
+
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (fn_args->file_name, PRI_DEFAULT, start_process, fn_args);
   if (tid == TID_ERROR) {
@@ -78,7 +76,6 @@ process_execute (const char *cmdline)
 static void
 start_process (void *fn_args_)
 {
-  // char *file_name = file_name_;
   struct filename_args *fn_args = fn_args_;
   struct intr_frame if_;
   bool success;
@@ -119,12 +116,17 @@ start_process (void *fn_args_)
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid) 
 {
-  /* dummy wait */
-  while (true) {
-    thread_yield();
-  }
+  struct thread *thread_child = thread_find (child_tid);
+  if (thread_child == NULL)                               /* TODO: is an invalid child_tid ? */
+    return -1;
+
+  /* wait */
+  sema_down(&thread_child->wait_sema);
+  
+  /* after waiting */
+  return thread_current ()->child_exit_status;
 }
 
 /* Free the current process's resources. */
@@ -133,6 +135,25 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
+
+  enum intr_level old_level = intr_disable();
+  struct semaphore *wait_sema = &cur->wait_sema;
+
+  // set exit status
+  struct thread *thread = NULL;
+  struct list_elem *e;
+  for (e = list_begin (&wait_sema->waiters); e != list_end (&wait_sema->waiters);
+           e = list_next (e))
+  {
+    thread = list_entry (e, struct thread, elem);
+    thread->child_exit_status = cur->my_exit_status;
+  }
+
+  while (!list_empty(&wait_sema->waiters))          /* No need of synchronization, */
+  {
+    sema_up(wait_sema);
+  }
+  intr_set_level(old_level);
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
