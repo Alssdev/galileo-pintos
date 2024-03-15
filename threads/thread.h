@@ -1,6 +1,7 @@
 #ifndef THREADS_THREAD_H
 #define THREADS_THREAD_H
 
+#include "threads/synch.h"
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
@@ -104,9 +105,11 @@ struct thread
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
-    uint32_t *pagedir;                  /* Page directory. */
-    struct semaphore wait;
-    
+    tid_t parent_tid;
+    uint32_t *pagedir;                      /* Page directory. */
+    struct semaphore wait_sema;             /* This sema allows othres threads to `join` this one. */
+    uint32_t child_exit_status;
+    uint32_t my_exit_status;
 #endif 
 
     /* Owned by thread.c. */
@@ -138,6 +141,7 @@ void thread_print_stats (void);
 
 typedef void thread_func (void *aux);
 tid_t thread_create (const char *name, int priority, thread_func *, void *);
+struct thread *thread_find (tid_t tid);
 
 void thread_block (void);
 void thread_unblock (struct thread *);
