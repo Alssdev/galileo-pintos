@@ -1,13 +1,14 @@
 #include "devices/shutdown.h"
 #include "userprog/syscall.h"
-#include <stdint.h>
-#include <stdio.h>
-#include <syscall-nr.h>
 #include "threads/interrupt.h"
+#include "userprog/process.h"
 #include "threads/thread.h"
 #include "threads/synch.h"
-#include "userprog/process.h"
 #include "filesys/off_t.h"
+#include <syscall-nr.h>
+#include <stdio.h>
+#include <stdint.h>
+#include "filesys/filesys.h"
 
 static void syscall_handler (struct intr_frame *);
 static uint32_t stack_arg (void *esp, uint8_t offset);
@@ -119,12 +120,12 @@ static void wait_handler (struct intr_frame *f) {
 }
 
 static void remove_handler(struct intr_frame *f){
-  char *name = stack_arg(f->esp, 1);
+  char *name = (char*)stack_arg(f->esp, 1);
   f->eax = filesys_remove(name);
 }
 
 static void create_handler(struct intr_frame *f){
-  char* name = stack_arg(f->esp, 1);
-  off_t init_size = stack_arg(f->esp, 2);
+  char* name = (char*)stack_arg(f->esp, 1);
+  off_t init_size = (off_t)stack_arg(f->esp, 2);
   f->eax = filesys_create(name, init_size);
 }
