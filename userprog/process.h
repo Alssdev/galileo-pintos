@@ -5,7 +5,6 @@
 
 /* argument passing struct */
 struct filename_args {
-  tid_t parent_tid;
   char *file_name;              /* filename. */
   char *cmdline_copy;           /* a copy of cmdlines */
   char *args;                   /* reference of the start of args in cmdline_copy */

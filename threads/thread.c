@@ -226,7 +226,7 @@ thread_create (const char *name, int priority,
   tid = t->tid = allocate_tid ();
 
 #ifdef USERPROG
-  t->parent_tid = ((struct filename_args *)(aux))->parent_tid;
+  t->parent_tid = thread_current ()->tid;               /* set who will be my parent process */
 #endif /* ifdef USERPROG */
 
   /* Stack frame for kernel_thread(). */
@@ -525,13 +525,15 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   
-  /* init internel structs */
 #ifdef USERPROG
+  /* init internel structs */
+  /* this sema allows othre process to 'join' this process. */
   sema_init(&t->wait_sema, 0);
+  /* when a process waits for another, result exit code will be save in my child_exit_status var */
   t->child_exit_status = 0;
-  t->my_exit_status = 0;
+  /* actually my own exit status */
+  t->my_exit_status = 0;                /* TODO: is this var actually needed? */
 #endif /* ifdef USERPROG */
-
 
   t->magic = THREAD_MAGIC;
 

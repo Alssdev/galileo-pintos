@@ -56,9 +56,6 @@ process_execute (const char *cmdline)
   fn_args->args = save_ptr;                                   /* pass as reference only, because cmdline_copy is a copy already
                                                                and isn't needed any more.*/ 
 
-  /* set parent_tid */
-  fn_args->parent_tid = thread_current ()->tid;
-
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (fn_args->file_name, PRI_DEFAULT, start_process, fn_args);
   if (tid == TID_ERROR) {
@@ -118,15 +115,15 @@ start_process (void *fn_args_)
 int
 process_wait (tid_t child_tid) 
 {
-  struct thread *thread_child = thread_find (child_tid);
+  struct thread *thread_child = thread_find (child_tid);  /* try to find child process */
   if (thread_child == NULL)                               /* TODO: is an invalid child_tid ? */
     return -1;
 
-  /* wait */
-  sema_down(&thread_child->wait_sema);
-  
-  /* after waiting */
-  return thread_current ()->child_exit_status;
+  /* TODO: add a WAIT_LOCK lock here */
+  sema_down(&thread_child->wait_sema);                    /* wait simulation */
+  return thread_current ()->child_exit_status;            /* when `this` thread wakes up
+                                                          child's exit status will be placed
+                                                          in child_exit_status.*/
 }
 
 /* Free the current process's resources. */
@@ -136,22 +133,28 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
-  enum intr_level old_level = intr_disable();
-  struct semaphore *wait_sema = &cur->wait_sema;
+  /* Process Termination Message */
+  printf ("%s: exit(%d)\n", cur->name, cur->my_exit_status);
+  
+  /* TODO: add WAIT_LOCK lock here */
+  enum intr_level old_level = intr_disable();             /* dumy synchronization. */
+  struct semaphore *wait_sema = &cur->wait_sema;          /* just a short reference. */
 
-  // set exit status
+
+  /* TODO: many process can wait for a same process? */
+  /* saving my_exit_status in all waiters */
   struct thread *thread = NULL;
   struct list_elem *e;
   for (e = list_begin (&wait_sema->waiters); e != list_end (&wait_sema->waiters);
            e = list_next (e))
   {
-    thread = list_entry (e, struct thread, elem);
-    thread->child_exit_status = cur->my_exit_status;
+    thread = list_entry (e, struct thread, elem);         /* parse thread. */
+    thread->child_exit_status = cur->my_exit_status;      /* pass my exit_status. */
   }
 
-  while (!list_empty(&wait_sema->waiters))          /* No need of synchronization, */
+  while (!list_empty(&wait_sema->waiters)) 
   {
-    sema_up(wait_sema);
+    sema_up(wait_sema);                                   /* wakes up a waiter. */
   }
   intr_set_level(old_level);
 
