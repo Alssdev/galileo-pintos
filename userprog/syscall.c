@@ -15,6 +15,7 @@
 
 static void syscall_handler (struct intr_frame *);
 static uint32_t stack_arg (void *esp, uint8_t offset);
+struct file *fd_get_file (int fd);
 
 /* handlers. */
 static void write_handler (struct intr_frame *);
@@ -25,6 +26,7 @@ static void wait_handler (struct intr_frame *);
 static void remove_handler(struct intr_frame *f);
 static void create_handler(struct intr_frame *f);
 static void open_handler(struct intr_frame *f);
+static void filesize_handler(struct intr_frame *f);
 
 /* file system */
 struct lock filesys_lock;               /* synchronization for the file system. */
@@ -84,6 +86,10 @@ syscall_handler (struct intr_frame *f)
       open_handler(f);
       break;
 
+    case SYS_FILESIZE:
+      filesize_handler(f);
+      break;
+
     default:
       printf("system call %x !\n", sys_code);
       thread_exit ();                           /* thread_exit calls process_exit */
@@ -102,6 +108,22 @@ stack_arg (void *esp, uint8_t offset)
 {
   return *((int*)esp + offset);
 }
+
+/* TODO: add a comment here. */
+struct file *fd_get_file (int fd) {
+  struct fd_elem *fd_elem;
+  struct list_elem *e;
+
+  for (e = list_begin (&fds); e != list_end (&fds);
+  e = list_next (e)) {
+    fd_elem = list_entry(e, struct fd_elem, elem);
+    if (fd_elem->fd == fd)
+      return fd_elem->file;
+  }
+
+  return NULL;
+}
+
 
 /* syscalls handlers */
 static void
@@ -167,10 +189,10 @@ static void create_handler(struct intr_frame *f) {
   lock_release(&filesys_lock);
 }
 
-static void open_handler(struct intr_frame *f) {
-  lock_acquire(&filesys_lock);
+static void open_handler (struct intr_frame *f) {
+  lock_acquire (&filesys_lock);
  
-  char *filename = (char*)stack_arg(f->esp, 1);           /* filename. */
+  char *filename = (char*)stack_arg (f->esp, 1);           /* filename. */
 
   struct file *file = filesys_open (filename);            /* open the file. */
   if (file != NULL) {
@@ -178,11 +200,11 @@ static void open_handler(struct intr_frame *f) {
     if (elem != NULL) {
       elem->file = file;
       elem->fd = next_fd++;
-      list_push_front(&fds, &elem->elem);                 /* register the file descriptor. */
+      list_push_front (&fds, &elem->elem);                 /* register the file descriptor. */
       f->eax = elem->fd;                                  /* return the file descriptor. */
       goto end;
     } else {
-      file_close(file);
+      file_close (file);
     }
   }
   
@@ -191,3 +213,16 @@ static void open_handler(struct intr_frame *f) {
 end:
   lock_release(&filesys_lock);
 }
+
+static void filesize_handler (struct intr_frame *f) {
+  int fd = (int)stack_arg (f->esp, 1);                     /* file descriptor. */
+  
+  struct file *file = fd_get_file (fd);                    /* file in mem. */
+  if (file != NULL) {
+    uint32_t size = file_length (file);
+    f->eax = size;
+  }
+
+  f->eax = -1;
+}
+
