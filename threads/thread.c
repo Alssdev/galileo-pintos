@@ -33,6 +33,11 @@ static struct list ready_list;
    when they are first scheduled and removed when they exit. */
 static struct list all_list;
 
+/* List a finished processes. Processes are added to this list
+ * why process_exit () is called. Processes are removed from this
+ * list when process_wait() is called. */
+static struct list dead_list;
+
 /* Idle thread. */
 static struct thread *idle_thread;
 
@@ -98,6 +103,7 @@ thread_init (void)
   list_init (&sleep_list);
   list_init (&ready_list);
   list_init (&all_list);
+  list_init (&dead_list);
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
@@ -250,10 +256,13 @@ thread_create (const char *name, int priority,
   return tid;
 }
 
-// TODO: explain with a comment
+/* Look up for tid in all active threads. If the thread is not found, then 
+ * NULL will be returned. */
 struct thread*
 thread_find (tid_t tid)
 {
+  ASSERT (intr_get_level() == INTR_OFF);
+
   struct thread *thread = NULL;
   struct list_elem *e;
   for (e = list_begin (&all_list); e != list_end (&all_list);
@@ -266,6 +275,46 @@ thread_find (tid_t tid)
 
   return NULL;
 }
+
+/* Look up for tid in all finished threads. If the thread is not found, then 
+ * NULL will be returned. */
+struct dead_thread*
+thread_dead_pop (tid_t tid)
+{
+  ASSERT (intr_get_level() == INTR_OFF);
+
+  struct dead_thread *thread = NULL;
+  struct list_elem *e;
+  for (e = list_begin (&dead_list); e != list_end (&dead_list);
+           e = list_next (e))
+  {
+    thread = list_entry (e, struct dead_thread, elem);
+    if (thread->tid == tid) {
+      list_remove(e);                                             /* allows only one call to wait () per child. */
+      return thread;
+    }
+  } 
+
+  return NULL;
+}
+
+/* Inserts a new dead thread entry to dead_list based in t. */
+bool thread_dead_push (struct thread *t) {
+  enum intr_level old_level = intr_disable ();            /* dummy synchronization */
+
+  struct dead_thread *dt = malloc (sizeof (struct dead_thread));
+  if (dt == NULL)
+    return false;
+
+  dt->tid = t->tid;
+  dt->exit_status = t->exit_status;
+
+  list_push_front(&dead_list, &dt->elem);
+
+  intr_set_level(old_level);
+  return true;
+}
+
 /* Puts the current thread to sleep.  It will not be scheduled
    again until awoken by thread_unblock().
 
@@ -529,10 +578,8 @@ init_thread (struct thread *t, const char *name, int priority)
   /* init internel structs */
   /* this sema allows othre process to 'join' this process. */
   sema_init(&t->wait_sema, 0);
-  /* when a process waits for another, result exit code will be save in my child_exit_status var */
-  t->child_exit_status = 0;
   /* actually my own exit status */
-  t->my_exit_status = 0;                /* TODO: is this var actually needed? */
+  t->exit_status = 0;
 #endif /* ifdef USERPROG */
 
   t->magic = THREAD_MAGIC;

@@ -53,9 +53,11 @@ syscall_handler (struct intr_frame *f)
     case SYS_WAIT:
       wait_handler (f);
       break;
+ 
     case SYS_REMOVE:
       remove_handler(f);
       break;
+
     case SYS_CREATE:
       create_handler(f);
       break;
@@ -99,7 +101,7 @@ write_handler (struct intr_frame *f)
 
 static void exit_handler (struct intr_frame *f) {
   uint32_t exit_status = stack_arg(f->esp, 1);            /* read exit code from stack. */
-  thread_current ()->my_exit_status = exit_status;        /* set my own exit status. */
+  thread_current ()->exit_status = exit_status;        /* set my own exit status. */
   thread_exit ();
 }
 
@@ -129,3 +131,4 @@ static void create_handler(struct intr_frame *f){
   off_t init_size = (off_t)stack_arg(f->esp, 2);
   f->eax = filesys_create(name, init_size);
 }
+

@@ -101,7 +101,6 @@ main (void)
 
   /* Segmentation. */
 #ifdef USERPROG
-  process_init_locks ();
   tss_init ();
   gdt_init ();
 #endif

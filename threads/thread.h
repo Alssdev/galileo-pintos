@@ -102,12 +102,18 @@ struct thread
     tid_t parent_tid;
     uint32_t *pagedir;                      /* Page directory. */
     struct semaphore wait_sema;             /* This sema allows othres threads to `join` this one. */
-    uint32_t child_exit_status;
-    uint32_t my_exit_status;
+    uint32_t exit_status;
 #endif 
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
+  };
+
+struct dead_thread
+  {
+    tid_t tid;                          /* Thread identifier. */
+    uint32_t exit_status;               /* Exit status. */
+    struct list_elem elem;              /* List elem. */
   };
 
 /* If false (default), use round-robin scheduler.
@@ -126,6 +132,8 @@ void thread_print_stats (void);
 typedef void thread_func (void *aux);
 tid_t thread_create (const char *name, int priority, thread_func *, void *);
 struct thread *thread_find (tid_t tid);
+struct dead_thread* thread_dead_pop (tid_t tid);
+bool thread_dead_push (struct thread *t);
 
 void thread_block (void);
 void thread_unblock (struct thread *);

@@ -26,10 +26,6 @@ static bool load (struct filename_args *fn_args, void (**eip) (void), void **esp
 /* locks */
 struct lock wait_lock;            /* this lock is used to synchronize process_exit () and process_wait () */
 
-// TODO: explain this function with a comment.
-void process_init_locks (void) {
-  lock_init (&wait_lock);
-}
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -126,50 +122,44 @@ process_wait (tid_t child_tid)
 {
   enum intr_level old_level = intr_disable ();            /* dummy synchronization */
 
-  struct thread *thread_child = thread_find (child_tid);  /* try to find child process */
-  if (thread_child == NULL)                               /* TODO: is an invalid child_tid ? */
-    return -1;
+  struct thread *thread_child;
+  struct dead_thread *child;
 
-  /* TODO: add a WAIT_LOCK lock here */
+  /* finding child thread */
+  thread_child = thread_find (child_tid);                 /* find an alive child process. */
+  if (thread_child == NULL) {                             
+    child = thread_dead_pop (child_tid);                  /* find a dead child process. */
+    if (child == NULL)
+      return -1;
+
+    return child->exit_status;                            /* if it's found, return its exit_status */
+  }
+
+  /* if child is alive, then go to wait */
   sema_down(&thread_child->wait_sema);                    /* wait simulation */
 
+  /* after waiting, get exit status */
+  child = thread_dead_pop (child_tid);                    /* when a child process exit it saves its exit
+                                                             status in threads/dead_list. */
   intr_set_level(old_level);
-  return thread_current ()->child_exit_status;            /* when `this` thread wakes up
-                                                          child's exit status will be placed
-                                                          in child_exit_status.*/
+
+  return child->exit_status;
 }
 
 /* Free the current process's resources. */
 void
 process_exit (void)
 {
-  enum intr_level old_level = intr_disable ();            /* dummy synchronization */
-
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
   /* Process Termination Message */
-  printf ("%s: exit(%d)\n", cur->name, cur->my_exit_status);
-  
-  /* TODO: add WAIT_LOCK lock here */
-  struct semaphore *wait_sema = &cur->wait_sema;          /* just a short reference. */
+  printf ("%s: exit(%d)\n", cur->name, cur->exit_status);
+ 
+  /* Save exit status. */
+  thread_dead_push (cur);                           /* save my exit_status in threads/dead_list */
+  sema_up (&cur->wait_sema);                        /* wakes up parent thread, if it's waiting. */
 
-  /* TODO: many process can wait for a same process? */
-  /* saving my_exit_status in all waiters */
-  struct thread *thread = NULL;
-  struct list_elem *e;
-  for (e = list_begin (&wait_sema->waiters); e != list_end (&wait_sema->waiters);
-           e = list_next (e))
-  {
-    thread = list_entry (e, struct thread, elem);         /* parse thread. */
-    thread->child_exit_status = cur->my_exit_status;      /* pass my exit_status. */
-  }
-
-  while (!list_empty (&wait_sema->waiters)) 
-  {
-    sema_up (wait_sema);                                   /* wakes up a waiter. */
-  }
-  intr_set_level (old_level);
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -557,8 +547,9 @@ setup_stack (void **esp, struct filename_args *fn_args)
       memcpy(*esp, &argv, sizeof(char**));
 
       /* ardd argc */
-      *esp -= 4;
-      memcpy(*esp, &args_len, 4);
+      // TODO: sizeof (int)
+      *esp -= sizeof(int);
+      memcpy(*esp, &args_len, sizeof(int));
 
       /* add a NULL pointer as return adderss */
       *esp -= sizeof(char**);
