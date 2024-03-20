@@ -16,4 +16,7 @@ insult
 lineup
 matmult
 recursor
+exec-bad-ptr
+exec-once
+child-simple
 *.d
