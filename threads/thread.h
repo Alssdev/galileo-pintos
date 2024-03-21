@@ -14,6 +14,10 @@ enum thread_status
     THREAD_BLOCKED,     /* Waiting for an event to trigger. */
     THREAD_DYING        /* About to be destroyed. */
   };
+enum exec_status {
+  ERROR,
+  SUCCESS
+};
 
 /* Thread identifier type.
    You can redefine this to whatever type you like. */
@@ -99,10 +103,11 @@ struct thread
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
-    tid_t parent_tid;
+    struct thread *parent;
     uint32_t *pagedir;                      /* Page directory. */
     struct semaphore wait_sema;             /* This sema allows othres threads to `join` this one. */
-    uint32_t exit_status;
+    uint32_t exit_status;                   /* exit status. */
+    enum exec_status exec_status;           /* does child was created? */
 #endif 
 
     /* Owned by thread.c. */

@@ -232,7 +232,7 @@ thread_create (const char *name, int priority,
   tid = t->tid = allocate_tid ();
 
 #ifdef USERPROG
-  t->parent_tid = thread_current ()->tid;               /* set who will be my parent process */
+  t->parent = thread_current ();               /* set who will be my parent process */
 #endif /* ifdef USERPROG */
 
   /* Stack frame for kernel_thread(). */
@@ -575,7 +575,6 @@ init_thread (struct thread *t, const char *name, int priority)
   t->priority = priority;
   
 #ifdef USERPROG
-  /* init internel structs */
   /* this sema allows othre process to 'join' this process. */
   sema_init(&t->wait_sema, 0);
   /* actually my own exit status */

@@ -6,7 +6,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "list.h"
 #include "threads/synch.h"
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
@@ -23,9 +22,6 @@
 static thread_func start_process NO_RETURN;
 static bool load (struct filename_args *fn_args, void (**eip) (void), void **esp);
 
-/* locks */
-struct lock wait_lock;            /* this lock is used to synchronize process_exit () and process_wait () */
-
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -39,7 +35,7 @@ process_execute (const char *cmdline)
   /* allocate filename_args */
   tid_t tid;
   struct filename_args *fn_args = malloc(sizeof(struct filename_args));
- 
+
   /* creating a modificable copy of cmdline. */
   str_len = strlen(cmdline);                                  /* len of cmdline string */
   fn_args->cmdline_copy = malloc (str_len + 1);               /* reserve mem for file_name_copy, + 1 because of \0 */
@@ -63,11 +59,19 @@ process_execute (const char *cmdline)
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (fn_args->file_name, PRI_DEFAULT, start_process, fn_args);
-  if (tid == TID_ERROR) {
+
+  /* wait for child to be successfully created. */
+  enum intr_level old_level = intr_disable ();
+  sema_down (&thread_find (tid)->wait_sema);
+  intr_set_level (old_level);
+
+  if (tid == TID_ERROR || thread_current ()->exec_status == ERROR) {
     /* free mem, otherwise, start_process will free mem. */
     free(fn_args->cmdline_copy);
     free(fn_args->file_name);
     free(fn_args);
+
+    return TID_ERROR;
   }
 
   return tid;
@@ -78,6 +82,7 @@ process_execute (const char *cmdline)
 static void
 start_process (void *fn_args_)
 {
+  struct thread *cur = thread_current ();
   struct filename_args *fn_args = fn_args_;
   struct intr_frame if_;
   bool success;
@@ -89,9 +94,16 @@ start_process (void *fn_args_)
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (fn_args, &if_.eip, &if_.esp);
 
+  /* Wake up parent process. Parent process always wait for child process
+   * to be created successfully. */
+  cur->parent->exec_status = success ? SUCCESS : ERROR;
+  sema_up (&cur->wait_sema);
+
   /* If load failed, quit. */
-  if (!success) 
+  if (!success) {
+    cur->exit_status = -1;
     thread_exit ();
+  }
 
   /* free mem */
   free(fn_args->cmdline_copy);
