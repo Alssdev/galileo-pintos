@@ -17,7 +17,7 @@
 #include "devices/input.h"
 
 static void syscall_handler (struct intr_frame *);
-static uint32_t stack_int (void *esp, uint8_t offset);
+static uint32_t stack_int (int *esp, uint8_t offset);
 struct file *fd_get_file (int fd);
 static void *stack_ptr (void *esp, uint8_t offset);
 
@@ -116,9 +116,16 @@ syscall_handler (struct intr_frame *f)
  *    - ...
  */
 static uint32_t
-stack_int (void *esp, uint8_t offset)
+stack_int (int *esp, uint8_t offset)
 {
-  return *((int*)esp + offset);
+  if (is_user_vaddr (esp + offset)) {
+    if (pagedir_get_page(thread_current ()->pagedir , esp + offset)) {
+      return *(esp + offset);
+    }
+  }
+
+  exit_handler (-1);                                    /* addr is bad. */
+  NOT_REACHED();
 }
 
 /* Reads argument of type `pointer` from stack and validates it.
