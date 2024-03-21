@@ -14,6 +14,7 @@
 #include <syscall-nr.h>
 #include <stdio.h>
 #include <stdint.h>
+#include "devices/input.h"
 
 static void syscall_handler (struct intr_frame *);
 static uint32_t stack_int (void *esp, uint8_t offset);
@@ -30,6 +31,7 @@ static void remove_handler (struct intr_frame *f);
 static void create_handler (struct intr_frame *f);
 static void open_handler (struct intr_frame *f);
 static void filesize_handler (struct intr_frame *f);
+static void read_handler (struct intr_frame *f);
 
 /* file system */
 struct lock filesys_lock;               /* synchronization for the file system. */
@@ -94,6 +96,10 @@ syscall_handler (struct intr_frame *f)
 
     case SYS_FILESIZE:
       filesize_handler (f);
+      break;
+
+    case SYS_READ:
+      read_handler (f);
       break;
 
     default:
@@ -254,3 +260,23 @@ static void filesize_handler (struct intr_frame *f) {
   f->eax = -1;
 }
 
+static void read_handler (struct intr_frame *f) {
+  int fd = (int)stack_int (f->esp, 1);                     /* file descriptor. */
+  void *buffer = stack_ptr(f->esp, 2);
+  uint32_t size = (uint32_t)stack_int (f->esp, 3);
+
+  if (fd == 0) {
+    /* read from keyboard. */
+    for (uint32_t i = 0; i < size; i++) {
+      *((char*)buffer + i) = input_getc (); 
+    }
+    f->eax = size;
+  } else {
+    /* read from file. */
+    lock_acquire(&filesys_lock);
+    struct file *file = fd_get_file(fd);
+    // TODO: valid file is not NULL
+    f->eax = file_read (file, buffer, size);
+    lock_release(&filesys_lock);
+  }; 
+}

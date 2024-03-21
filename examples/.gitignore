@@ -19,4 +19,5 @@ recursor
 exec-bad-ptr
 exec-once
 child-simple
+exec-missing
 *.d
