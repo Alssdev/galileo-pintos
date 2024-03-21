@@ -145,6 +145,8 @@ stack_ptr (void *esp, uint8_t offset)
 
 /* TODO: add a comment here. */
 struct file *fd_get_file (int fd) {
+  ASSERT (lock_held_by_current_thread (&filesys_lock));
+
   struct fd_elem *fd_elem;
   struct list_elem *e;
 
@@ -250,14 +252,17 @@ end:
 
 static void filesize_handler (struct intr_frame *f) {
   int fd = (int)stack_int (f->esp, 1);                     /* file descriptor. */
-  
+ 
+  lock_acquire (&filesys_lock);
   struct file *file = fd_get_file (fd);                    /* file in mem. */
   if (file != NULL) {
     uint32_t size = file_length (file);
     f->eax = size;
+  } else {
+    f->eax = -1;
   }
+  lock_release (&filesys_lock);
 
-  f->eax = -1;
 }
 
 static void read_handler (struct intr_frame *f) {
