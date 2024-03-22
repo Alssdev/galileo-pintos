@@ -14,10 +14,12 @@ enum thread_status
     THREAD_BLOCKED,     /* Waiting for an event to trigger. */
     THREAD_DYING        /* About to be destroyed. */
   };
-enum exec_status {
-  ERROR,
-  SUCCESS
-};
+
+enum exec_status
+  {
+    ERROR,
+    SUCCESS
+  };
 
 /* Thread identifier type.
    You can redefine this to whatever type you like. */

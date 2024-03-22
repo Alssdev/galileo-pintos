@@ -62,7 +62,9 @@ process_execute (const char *cmdline)
 
   /* wait for child to be successfully created. */
   enum intr_level old_level = intr_disable ();
-  sema_down (&thread_find (tid)->wait_sema);
+  struct thread *child = thread_find(tid);
+  if (child != NULL)
+    sema_down (&child->wait_sema);
   intr_set_level (old_level);
 
   if (tid == TID_ERROR || thread_current ()->exec_status == ERROR) {
@@ -132,17 +134,19 @@ start_process (void *fn_args_)
 int
 process_wait (tid_t child_tid) 
 {
-  enum intr_level old_level = intr_disable ();            /* dummy synchronization */
-
   struct thread *thread_child;
   struct dead_thread *child;
+
+  enum intr_level old_level = intr_disable ();            /* dummy synchronization */
 
   /* finding child thread */
   thread_child = thread_find (child_tid);                 /* find an alive child process. */
   if (thread_child == NULL) {                             
     child = thread_dead_pop (child_tid);                  /* find a dead child process. */
-    if (child == NULL)
+    if (child == NULL) {
+      intr_set_level(old_level);
       return -1;
+    }
 
     return child->exit_status;                            /* if it's found, return its exit_status */
   }
