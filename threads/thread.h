@@ -110,6 +110,7 @@ struct thread
     struct semaphore wait_sema;             /* This sema allows othres threads to `join` this one. */
     uint32_t exit_status;                   /* exit status. */
     enum exec_status exec_status;           /* does child was created? */
+    struct list fds;                        /* file descriptor list. */
 #endif 
 
     /* Owned by thread.c. */

@@ -2,7 +2,6 @@
 #include "userprog/syscall.h"
 #include "filesys/file.h"
 #include "list.h"
-#include "threads/interrupt.h"
 #include "threads/vaddr.h"
 #include "userprog/pagedir.h"
 #include "userprog/process.h"
@@ -13,44 +12,27 @@
 #include "filesys/off_t.h"
 #include <syscall-nr.h>
 #include <stdio.h>
-#include <stdint.h>
 #include "devices/input.h"
+#include "userprog/syscall-handlers.h"
 
 /* file system */
+int next_fd;                            /* file descriptor counter. */
 struct lock filesys_lock;               /* synchronization for the file system. */
-struct list fds;                        /* file descriptor list. */
 struct fd_elem {
   struct list_elem elem;
   struct file *file;
   struct thread *t;
   int fd;                               /* file descriptor. */
 };
-int next_fd;                            /* file descriptor counter. */ 
 
-static void syscall_handler (struct intr_frame *);
+static void syscall_handler (struct intr_frame *f);
 static uint32_t stack_int (int *esp, uint8_t offset);
 struct list_elem *fd_get_file (int fd);
 static void *stack_ptr (void *esp, uint8_t offset);
 
-/* handlers. */
-static void write_handler (struct intr_frame *);
-static void exit_handler (uint32_t exit_status);
-static void exec_handler (struct intr_frame *);
-static void halt_handler (void);
-static void wait_handler (struct intr_frame *);
-static void remove_handler (struct intr_frame *f);
-static void create_handler (struct intr_frame *f);
-static void open_handler (struct intr_frame *f);
-static void filesize_handler (struct intr_frame *f);
-static void read_handler (struct intr_frame *f);
-static void close_handler (int fd);
-static void seek_handler (struct intr_frame *f);
-static void tell_handler (struct intr_frame *f);
-
 void syscall_init (void) {
   /* structs MUST be initilizated before enabling syscalls. */
   lock_init (&filesys_lock);
-  list_init (&fds);
   next_fd = 2;                          /* 0 and 1 are reserved form stdo and stdi. */
 
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
@@ -158,18 +140,17 @@ static void *stack_ptr (void *esp, uint8_t offset) {
     }
   }
 
-  exit_handler (-1);                                    /* addr is bad. */
+  exit_handler (-1);
   NOT_REACHED();
 }
 
 /* TODO: add a comment here. */
 struct list_elem *fd_get_file (int fd) {
-  ASSERT (lock_held_by_current_thread (&filesys_lock));
-
   struct fd_elem *fd_elem;
   struct list_elem *e;
+  struct thread *cur = thread_current ();
 
-  for (e = list_begin (&fds); e != list_end (&fds);
+  for (e = list_begin (&cur->fds); e != list_end (&cur->fds);
   e = list_next (e)) {
     fd_elem = list_entry (e, struct fd_elem, elem);
     if (fd_elem->fd == fd)
@@ -179,55 +160,52 @@ struct list_elem *fd_get_file (int fd) {
   return NULL;
 }
 
-
 /* syscalls handlers */
-static void
-write_handler (struct intr_frame *f)
+void write_handler (struct intr_frame *f)
 {
   uint32_t fd = stack_int (f->esp, 1);
   char *buffer = (char*)stack_ptr (f->esp, 2);       /* mem[buffer] contains the string. */
   unsigned size = (unsigned)stack_int (f->esp, 3);   /* bytes to be printed. */
   
   if (fd == 1) {
-    putbuf (buffer, size);               /* putbuf writes to console. */
-    f->eax = size;                      /* this syscall returns the size writed. eax has the return value. */
+    putbuf (buffer, size);                /* putbuf writes to console. */
+    f->eax = size;
   } else {
-    lock_acquire (&filesys_lock);
-
     struct list_elem *elem = fd_get_file (fd);
     if (elem != NULL) {
       struct file *file = list_entry (elem, struct fd_elem, elem)->file;
-      f->eax = file_write (file, buffer, size);
+
+      lock_acquire (&filesys_lock);
+      f->eax = file_write (file, buffer, size);           /* write. */
+      lock_release (&filesys_lock);
     } else {
       f->eax = -1;
     }
-
-    lock_release (&filesys_lock);
   }
 }
 
-static void exit_handler (uint32_t exit_status) {
+void exit_handler (uint32_t exit_status) {
   thread_current ()->exit_status = exit_status;        /* set my own exit status. */
   thread_exit ();
 }
 
-static void halt_handler (void) {
+void halt_handler (void) {
   shutdown_power_off ();               /* bye bye */
 }
 
-static void exec_handler (struct intr_frame *f) {
+void exec_handler (struct intr_frame *f) {
   char* cmd_line = stack_ptr (f->esp, 1);
   tid_t tid = process_execute (cmd_line);
   f->eax = tid;
 }
 
-static void wait_handler (struct intr_frame *f) {
+void wait_handler (struct intr_frame *f) {
   tid_t tid = stack_int (f->esp, 1);
   int exit_status = process_wait (tid);
   f->eax = exit_status;
 }
 
-static void remove_handler(struct intr_frame *f) {
+void remove_handler (struct intr_frame *f) {
   char *name = stack_ptr (f->esp, 1);
  
   lock_acquire (&filesys_lock);
@@ -237,7 +215,7 @@ static void remove_handler(struct intr_frame *f) {
   lock_release (&filesys_lock);
 }
 
-static void create_handler(struct intr_frame *f) {
+void create_handler(struct intr_frame *f) {
   char* name = stack_ptr (f->esp, 1);
   off_t init_size = stack_int (f->esp, 2);
 
@@ -248,8 +226,9 @@ static void create_handler(struct intr_frame *f) {
   lock_release (&filesys_lock);
 }
 
-static void open_handler (struct intr_frame *f) {
+void open_handler (struct intr_frame *f) {
   char *filename = stack_ptr (f->esp, 1);                 /* filename. */
+  struct thread *cur = thread_current ();
 
   lock_acquire (&filesys_lock);
   
@@ -259,7 +238,7 @@ static void open_handler (struct intr_frame *f) {
     if (elem != NULL) {
       elem->file = file;
       elem->fd = next_fd++;
-      list_push_front (&fds, &elem->elem);                /* register the file descriptor. */
+      list_push_front (&cur->fds, &elem->elem);                /* register the file descriptor. */
       f->eax = elem->fd;                                  /* return the file descriptor. */
       goto end;
     } else {
@@ -273,7 +252,7 @@ end:
   lock_release (&filesys_lock);
 }
 
-static void filesize_handler (struct intr_frame *f) {
+void filesize_handler (struct intr_frame *f) {
   int fd = stack_int (f->esp, 1);                         /* file descriptor. */
   uint32_t size = -1;                                     /* size = error_value by default. */
 
@@ -287,7 +266,7 @@ static void filesize_handler (struct intr_frame *f) {
   lock_release (&filesys_lock);
 }
 
-static void read_handler (struct intr_frame *f) {
+void read_handler (struct intr_frame *f) {
   int fd = stack_int (f->esp, 1);                     /* file descriptor. */
   char *buffer = stack_ptr(f->esp, 2);
   uint32_t size = stack_int (f->esp, 3);
@@ -314,7 +293,7 @@ static void read_handler (struct intr_frame *f) {
   } 
 }
 
-static void close_handler (int fd) {
+void close_handler (int fd) {
   lock_acquire (&filesys_lock);
 
   struct fd_elem *fd_elem = list_entry (fd_get_file (fd), struct fd_elem, elem);
@@ -326,7 +305,7 @@ static void close_handler (int fd) {
   lock_release (&filesys_lock);
 }
 
-static void seek_handler (struct intr_frame *f) {
+void seek_handler (struct intr_frame *f) {
   int fd = stack_int (f->esp, 1);
   off_t size = stack_int (f->esp, 2);
 
@@ -341,7 +320,7 @@ static void seek_handler (struct intr_frame *f) {
   lock_release (&filesys_lock);
 }
 
-static void tell_handler (struct intr_frame *f) {
+void tell_handler (struct intr_frame *f) {
   int fd = stack_int (f->esp, 1);
 
   lock_acquire (&filesys_lock);
@@ -354,3 +333,4 @@ static void tell_handler (struct intr_frame *f) {
 
   lock_release (&filesys_lock);
 }
+

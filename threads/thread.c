@@ -300,7 +300,7 @@ thread_dead_pop (tid_t tid)
 
 /* Inserts a new dead thread entry to dead_list based in t. */
 bool thread_dead_push (struct thread *t) {
-  enum intr_level old_level = intr_disable ();            /* dummy synchronization */
+  ASSERT (intr_get_level () == INTR_OFF);
 
   struct dead_thread *dt = malloc (sizeof (struct dead_thread));
   if (dt == NULL)
@@ -309,9 +309,8 @@ bool thread_dead_push (struct thread *t) {
   dt->tid = t->tid;
   dt->exit_status = t->exit_status;
 
-  list_push_front(&dead_list, &dt->elem);
+  list_push_front (&dead_list, &dt->elem);
 
-  intr_set_level(old_level);
   return true;
 }
 
@@ -577,6 +576,7 @@ init_thread (struct thread *t, const char *name, int priority)
 #ifdef USERPROG
   /* this sema allows othre process to 'join' this process. */
   sema_init(&t->wait_sema, 0);
+  list_init(&t->fds);
   /* actually my own exit status */
   t->exit_status = 0;
 #endif /* ifdef USERPROG */

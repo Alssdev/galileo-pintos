@@ -61,10 +61,12 @@ process_execute (const char *cmdline)
   tid = thread_create (fn_args->file_name, PRI_DEFAULT, start_process, fn_args);
 
   /* wait for child to be successfully created. */
-  enum intr_level old_level = intr_disable ();
-  struct thread *child = thread_find(tid);
+  enum intr_level old_level = intr_disable ();                /* synchronization for all_list. */
+
+  struct thread *child = thread_find (tid);
   if (child != NULL)
     sema_down (&child->wait_sema);
+
   intr_set_level (old_level);
 
   if (tid == TID_ERROR || thread_current ()->exec_status == ERROR) {
@@ -134,32 +136,38 @@ start_process (void *fn_args_)
 int
 process_wait (tid_t child_tid) 
 {
-  struct thread *thread_child;
-  struct dead_thread *child;
+  struct thread *alive_child;
+  struct dead_thread *dead_child;
 
-  enum intr_level old_level = intr_disable ();            /* dummy synchronization */
+  enum intr_level old_level = intr_disable ();            /* synchronization for all_list. */
 
-  /* finding child thread */
-  thread_child = thread_find (child_tid);                 /* find an alive child process. */
-  if (thread_child == NULL) {                             
-    child = thread_dead_pop (child_tid);                  /* find a dead child process. */
-    if (child == NULL) {
-      intr_set_level(old_level);
-      return -1;
+  /* finding an alive child process. */
+  alive_child = thread_find (child_tid);                  /* find an alive child process. */
+  if (alive_child == NULL) {                             
+    dead_child = thread_dead_pop (child_tid);             /* find a dead child process. */
+    if (dead_child == NULL) {
+      intr_set_level (old_level);
+      return -1;                                          /* child not found. */
     }
 
-    return child->exit_status;                            /* if it's found, return its exit_status */
+    intr_set_level (old_level);
+    return dead_child->exit_status;                       /* if it's found, return its exit_status */
   }
 
   /* if child is alive, then go to wait */
-  sema_down(&thread_child->wait_sema);                    /* wait simulation */
+  sema_down (&alive_child->wait_sema);                     /* wait simulation */
 
   /* after waiting, get exit status */
-  child = thread_dead_pop (child_tid);                    /* when a child process exit it saves its exit
+  dead_child = thread_dead_pop (child_tid);               /* when a child process exit it saves its exit
                                                              status in threads/dead_list. */
-  intr_set_level(old_level);
+  /* get exit status. */
+  int exit_status = dead_child->exit_status;
 
-  return child->exit_status;
+  /* free mem. */
+  free (dead_child);
+
+  intr_set_level (old_level);
+  return exit_status;
 }
 
 /* Free the current process's resources. */
@@ -173,8 +181,12 @@ process_exit (void)
   printf ("%s: exit(%d)\n", cur->name, cur->exit_status);
  
   /* Save exit status. */
-  thread_dead_push (cur);                           /* save my exit_status in threads/dead_list */
-  sema_up (&cur->wait_sema);                        /* wakes up parent thread, if it's waiting. */
+  enum intr_level old_level = intr_disable ();
+  thread_dead_push (cur);
+  intr_set_level (old_level);
+
+  /* wakes up parent thread, if it's waiting. */
+  sema_up (&cur->wait_sema);
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
