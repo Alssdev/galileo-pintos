@@ -191,7 +191,6 @@ process_exit (void)
     file_close(cur->f);
   }
   
-
   /* wakes up parent thread, if it's waiting. */
   sema_up (&cur->wait_sema);
 

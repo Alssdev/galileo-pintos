@@ -186,6 +186,14 @@ void write_handler (struct intr_frame *f)
 
 void exit_handler (uint32_t exit_status) {
   thread_current ()->exit_status = exit_status;        /* set my own exit status. */
+  struct list *fds_list = &thread_current()->fds;
+
+  struct list_elem *e;
+  for (e = list_begin (fds_list); e != list_end (fds_list); e = list_next (e))
+        {
+          struct fd_elem *f = list_entry (e, struct fd_elem, elem);
+          close_handler(f->fd);
+        }
   thread_exit ();
 }
 
