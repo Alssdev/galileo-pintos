@@ -91,6 +91,8 @@ start_process (void *fn_args_)
   struct intr_frame if_;
   bool success;
 
+ 
+
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
@@ -184,6 +186,11 @@ process_exit (void)
   enum intr_level old_level = intr_disable ();
   thread_dead_push (cur);
   intr_set_level (old_level);
+
+  if(cur->f != NULL){
+    file_close(cur->f);
+  }
+  
 
   /* wakes up parent thread, if it's waiting. */
   sema_up (&cur->wait_sema);
@@ -332,6 +339,7 @@ load (struct filename_args *fn_args, void (**eip) (void), void **esp)
       goto done; 
     }
 
+  file_deny_write (file);
   /* Read program headers. */
   file_ofs = ehdr.e_phoff;
   for (i = 0; i < ehdr.e_phnum; i++) 
@@ -401,8 +409,9 @@ load (struct filename_args *fn_args, void (**eip) (void), void **esp)
   success = true;
 
  done:
+  t->f = file;
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
+  //file_close (file);
   return success;
 }
 

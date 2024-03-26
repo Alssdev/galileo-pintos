@@ -105,6 +105,7 @@ struct thread
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
+    struct file *f;                         /* File that is being execute */
     struct thread *parent;
     uint32_t *pagedir;                      /* Page directory. */
     struct semaphore wait_sema;             /* This sema allows othres threads to `join` this one. */
