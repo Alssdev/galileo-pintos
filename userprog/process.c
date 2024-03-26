@@ -1,4 +1,5 @@
 #include "userprog/process.h"
+#include "userprog/syscall.h"
 #include <debug.h>
 #include <inttypes.h>
 #include <round.h>
@@ -106,10 +107,8 @@ start_process (void *fn_args_)
   sema_up (&cur->wait_sema);
 
   /* If load failed, quit. */
-  if (!success) {
-    cur->exit_status = -1;
-    thread_exit ();
-  }
+  if (!success)
+    exit_handler (-1);
 
   /* free mem */
   free(fn_args->cmdline_copy);
