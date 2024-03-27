@@ -28,6 +28,7 @@ struct fd_elem {
 static void syscall_handler (struct intr_frame *f);
 static uint32_t stack_int (int *esp, uint8_t offset);
 struct list_elem *fd_get_file (int fd);
+static bool is_valid_addr (void* addr);
 static void *stack_ptr (void *esp, uint8_t offset);
 
 void syscall_init (void) {
@@ -102,9 +103,20 @@ syscall_handler (struct intr_frame *f)
 
     default:
       printf ("system call %x !\n", sys_code);
-      thread_exit ();                           /* thread_exit calls process_exit */
+      exit_handler (-1);                           /* thread_exit calls process_exit */
       break;
   }
+}
+
+// TODO: add comment here
+bool is_valid_addr (void* addr) {
+  if (is_user_vaddr (addr)) {
+    if (pagedir_get_page (thread_current ()->pagedir, addr) != NULL) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /* this function is used to read an argument from stack. Offset param
@@ -114,13 +126,12 @@ syscall_handler (struct intr_frame *f)
  *    - ...
  */
 static uint32_t stack_int (int *esp, uint8_t offset) {
-  if (is_user_vaddr (esp + offset)) {
-    if (pagedir_get_page (thread_current ()->pagedir , esp + offset)) {
-      return *(esp + offset);
-    }
-  }
+  void *addr = esp + offset;
 
-  exit_handler (-1);                                    /* addr is bad. */
+  if (is_valid_addr (addr) && is_valid_addr(addr + sizeof (int)))
+    return *(int *)addr;        /* addr is ok. */
+
+  exit_handler (-1);
   NOT_REACHED ();
 }
 
@@ -131,17 +142,13 @@ static uint32_t stack_int (int *esp, uint8_t offset) {
  *    - ...
  */
 static void *stack_ptr (void *esp, uint8_t offset) {
-  void *addr = (void*)stack_int (esp, offset);          /* reads ptr from stack as normal. */
+  void *addr = (void*)stack_int (esp, offset);
 
-  if (is_user_vaddr (addr)) {                           /* addr is not PintOS code. */
-    if (pagedir_get_page (thread_current ()->pagedir, addr) != NULL) {
-      /* mem[addr] is owned by the process. */
-      return addr;                                      /* addr is ok. */
-    }
-  }
+  if (is_valid_addr (addr))
+    return addr;                                        /* addr is ok. */
 
   exit_handler (-1);
-  NOT_REACHED();
+  NOT_REACHED ();
 }
 
 /* TODO: add a comment here. */
@@ -195,6 +202,7 @@ void exit_handler (uint32_t exit_status) {
           close_handler(f->fd);
         }
   thread_exit ();
+  NOT_REACHED ();
 }
 
 void halt_handler (void) {
@@ -239,8 +247,9 @@ void open_handler (struct intr_frame *f) {
   struct thread *cur = thread_current ();
 
   lock_acquire (&filesys_lock);
-  
   struct file *file = filesys_open (filename);            /* open the file. */
+  lock_release (&filesys_lock);
+
   if (file != NULL) {
     struct fd_elem *elem = malloc (sizeof (*elem));       /* reserve mem for file descriptor. */
     if (elem != NULL) {
@@ -248,16 +257,15 @@ void open_handler (struct intr_frame *f) {
       elem->fd = next_fd++;
       list_push_front (&cur->fds, &elem->elem);                /* register the file descriptor. */
       f->eax = elem->fd;                                  /* return the file descriptor. */
-      goto end;
+      return;
     } else {
+      lock_acquire (&filesys_lock);
       file_close (file);
+      lock_release (&filesys_lock);
     }
   }
   
   f->eax = -1;                                            /* something went wrong. */
-
-end:
-  lock_release (&filesys_lock);
 }
 
 void filesize_handler (struct intr_frame *f) {

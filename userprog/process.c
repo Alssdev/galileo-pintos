@@ -40,8 +40,10 @@ process_execute (const char *cmdline)
   /* creating a modificable copy of cmdline. */
   str_len = strlen(cmdline);                                  /* len of cmdline string */
   fn_args->cmdline_copy = malloc (str_len + 1);               /* reserve mem for file_name_copy, + 1 because of \0 */
-  if (fn_args->cmdline_copy == NULL)
+  if (fn_args->cmdline_copy == NULL) {
+    free (fn_args);
     return TID_ERROR;
+  }
   strlcpy (fn_args->cmdline_copy, cmdline, str_len + 1);      /* create the copy of file_name */
 
   /* extracting filename from cmdline param. */
@@ -50,6 +52,7 @@ process_execute (const char *cmdline)
   fn_args->file_name = malloc(str_len + 1);                   /* reserve mem for fn_args->filename, + 1 because of \0 */
   if (fn_args->file_name == NULL) {
     free (fn_args->cmdline_copy);
+    free (fn_args);
     return TID_ERROR;
   }
   strlcpy(fn_args->file_name, token, str_len + 1);            /* create the copy of filename */
@@ -61,14 +64,16 @@ process_execute (const char *cmdline)
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (fn_args->file_name, PRI_DEFAULT, start_process, fn_args);
 
-  /* wait for child to be successfully created. */
-  enum intr_level old_level = intr_disable ();                /* synchronization for all_list. */
+  if (tid != TID_ERROR) {
+    /* wait for child to be successfully created. */
+    enum intr_level old_level = intr_disable ();                /* synchronization for all_list. */
 
-  struct thread *child = thread_find (tid);
-  if (child != NULL)
-    sema_down (&child->wait_sema);
+    struct thread *child = thread_find (tid);
+    if (child != NULL)
+      sema_down (&child->wait_sema);
 
-  intr_set_level (old_level);
+    intr_set_level (old_level);
+  }
 
   if (tid == TID_ERROR || thread_current ()->exec_status == ERROR) {
     /* free mem, otherwise, start_process will free mem. */
@@ -91,8 +96,6 @@ start_process (void *fn_args_)
   struct filename_args *fn_args = fn_args_;
   struct intr_frame if_;
   bool success;
-
- 
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
@@ -139,6 +142,7 @@ process_wait (tid_t child_tid)
 {
   struct thread *alive_child;
   struct dead_thread *dead_child;
+  int exit_status;
 
   enum intr_level old_level = intr_disable ();            /* synchronization for all_list. */
 
@@ -151,8 +155,14 @@ process_wait (tid_t child_tid)
       return -1;                                          /* child not found. */
     }
 
+    /* get exit status. */
+    exit_status = dead_child->exit_status;
+
+    /* free mem. */
+    free (dead_child);
+
     intr_set_level (old_level);
-    return dead_child->exit_status;                       /* if it's found, return its exit_status */
+    return exit_status;
   }
 
   /* if child is alive, then go to wait */
@@ -162,7 +172,7 @@ process_wait (tid_t child_tid)
   dead_child = thread_dead_pop (child_tid);               /* when a child process exit it saves its exit
                                                              status in threads/dead_list. */
   /* get exit status. */
-  int exit_status = dead_child->exit_status;
+  exit_status = dead_child->exit_status;
 
   /* free mem. */
   free (dead_child);
