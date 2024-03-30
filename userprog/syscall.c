@@ -26,11 +26,24 @@ struct fd_elem {
 };
 
 static void syscall_handler (struct intr_frame *f);
-static uint32_t stack_int (int *esp, uint8_t offset);
-struct list_elem *fd_get_file (int fd);
-static bool is_valid_addr (void* addr);
-static void *stack_ptr (void *esp, uint8_t offset);
 
+struct list_elem *fd_get_file (int fd);
+
+static bool is_valid_addr (void* addr);
+static void* stack_ptr (void *esp, uint8_t offset);
+static char* stack_str (void *esp, uint8_t offset);
+static uint32_t stack_int (int *esp, uint8_t offset);
+
+
+void filesys_acquire (void) {
+  lock_acquire (&filesys_lock);
+}
+
+void filesys_release (void) {
+  lock_release (&filesys_lock);
+}
+
+// TODO: add a comment here.
 void syscall_init (void) {
   /* structs MUST be initilizated before enabling syscalls. */
   lock_init (&filesys_lock);
@@ -39,6 +52,7 @@ void syscall_init (void) {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
+// TODO: add a comment here.
 static void
 syscall_handler (struct intr_frame *f) 
 {
@@ -55,7 +69,7 @@ syscall_handler (struct intr_frame *f)
       exit_status = stack_int (f->esp, 1);
       exit_handler (exit_status);
       break;
- 
+
     case SYS_WRITE:
       write_handler (f);
       break;
@@ -67,7 +81,7 @@ syscall_handler (struct intr_frame *f)
     case SYS_WAIT:
       wait_handler (f);
       break;
- 
+
     case SYS_REMOVE:
       remove_handler (f);
       break;
@@ -151,6 +165,22 @@ static void *stack_ptr (void *esp, uint8_t offset) {
   NOT_REACHED ();
 }
 
+static char *stack_str (void *esp, uint8_t offset) {
+  char *addr = stack_ptr (esp, offset);
+  char *tmp = addr;
+
+  while (*tmp != '\0') {
+    if (is_valid_addr (tmp + 1)) {
+      tmp++;
+    } else {
+      exit_handler (-1);
+      NOT_REACHED ();
+    }
+  }
+
+  return addr;
+}
+
 /* TODO: add a comment here. */
 struct list_elem *fd_get_file (int fd) {
   struct fd_elem *fd_elem;
@@ -171,9 +201,9 @@ struct list_elem *fd_get_file (int fd) {
 void write_handler (struct intr_frame *f)
 {
   uint32_t fd = stack_int (f->esp, 1);
-  char *buffer = (char*)stack_ptr (f->esp, 2);       /* mem[buffer] contains the string. */
-  unsigned size = (unsigned)stack_int (f->esp, 3);   /* bytes to be printed. */
-  
+  char *buffer = stack_str (f->esp, 2);               /* mem[buffer] contains the string. */
+  unsigned size = (unsigned)stack_int (f->esp, 3);    /* bytes to be printed. */
+
   if (fd == 1) {
     putbuf (buffer, size);                /* putbuf writes to console. */
     f->eax = size;
@@ -182,9 +212,9 @@ void write_handler (struct intr_frame *f)
     if (elem != NULL) {
       struct file *file = list_entry (elem, struct fd_elem, elem)->file;
 
-      lock_acquire (&filesys_lock);
+      filesys_acquire ();
       f->eax = file_write (file, buffer, size);           /* write. */
-      lock_release (&filesys_lock);
+      filesys_release ();
     } else {
       f->eax = -1;
     }
@@ -197,10 +227,10 @@ void exit_handler (uint32_t exit_status) {
 
   struct list_elem *e;
   for (e = list_begin (fds_list); e != list_end (fds_list); e = list_next (e))
-        {
-          struct fd_elem *f = list_entry (e, struct fd_elem, elem);
-          close_handler(f->fd);
-        }
+  {
+    struct fd_elem *f = list_entry (e, struct fd_elem, elem);
+    close_handler(f->fd);
+  }
   thread_exit ();
   NOT_REACHED ();
 }
@@ -210,7 +240,7 @@ void halt_handler (void) {
 }
 
 void exec_handler (struct intr_frame *f) {
-  char* cmd_line = stack_ptr (f->esp, 1);
+  char* cmd_line = stack_str (f->esp, 1);
   tid_t tid = process_execute (cmd_line);
   f->eax = tid;
 }
@@ -222,33 +252,30 @@ void wait_handler (struct intr_frame *f) {
 }
 
 void remove_handler (struct intr_frame *f) {
-  char *name = stack_ptr (f->esp, 1);
- 
-  lock_acquire (&filesys_lock);
+  char *name = stack_str (f->esp, 1);
 
+  filesys_acquire ();
   f->eax = filesys_remove (name);
- 
-  lock_release (&filesys_lock);
+  filesys_release ();
 }
 
-void create_handler(struct intr_frame *f) {
-  char* name = stack_ptr (f->esp, 1);
+void create_handler (struct intr_frame *f) {
+  char* name = stack_str (f->esp, 1);
   off_t init_size = stack_int (f->esp, 2);
 
-  lock_acquire (&filesys_lock);
-  
+  filesys_acquire ();
   f->eax = filesys_create (name, init_size);
+  filesys_release ();
 
-  lock_release (&filesys_lock);
 }
 
 void open_handler (struct intr_frame *f) {
-  char *filename = stack_ptr (f->esp, 1);                 /* filename. */
+  char *filename = stack_str (f->esp, 1);                 /* filename. */
   struct thread *cur = thread_current ();
 
-  lock_acquire (&filesys_lock);
+  filesys_acquire ();
   struct file *file = filesys_open (filename);            /* open the file. */
-  lock_release (&filesys_lock);
+  filesys_release ();
 
   if (file != NULL) {
     struct fd_elem *elem = malloc (sizeof (*elem));       /* reserve mem for file descriptor. */
@@ -259,12 +286,12 @@ void open_handler (struct intr_frame *f) {
       f->eax = elem->fd;                                  /* return the file descriptor. */
       return;
     } else {
-      lock_acquire (&filesys_lock);
+      filesys_acquire ();
       file_close (file);
-      lock_release (&filesys_lock);
+      filesys_release ();
     }
   }
-  
+
   f->eax = -1;                                            /* something went wrong. */
 }
 
@@ -272,19 +299,19 @@ void filesize_handler (struct intr_frame *f) {
   int fd = stack_int (f->esp, 1);                         /* file descriptor. */
   uint32_t size = -1;                                     /* size = error_value by default. */
 
-  lock_acquire (&filesys_lock);
   struct file *file = list_entry (fd_get_file (fd), struct fd_elem, elem)->file;
   if (file != NULL) {
+    filesys_acquire ();
     size = file_length (file);                            /* calc file's size. */
+    filesys_release ();
   }
 
   f->eax = size;
-  lock_release (&filesys_lock);
 }
 
 void read_handler (struct intr_frame *f) {
   int fd = stack_int (f->esp, 1);                     /* file descriptor. */
-  char *buffer = stack_ptr(f->esp, 2);
+  char *buffer = stack_str (f->esp, 2);
   uint32_t size = stack_int (f->esp, 3);
 
   if (fd == 0) {
@@ -295,58 +322,54 @@ void read_handler (struct intr_frame *f) {
     f->eax = size;
   } else {
     /* read from file. */
-    lock_acquire (&filesys_lock);
-
-    struct list_elem *elem = fd_get_file(fd);
+    struct list_elem *elem = fd_get_file (fd);
     if (elem != NULL) {
       struct file *file = list_entry (elem, struct fd_elem, elem)->file;
+
+      filesys_acquire ();
       f->eax = file_read (file, buffer, size);
+      filesys_release ();
     } else {
       f->eax = -1;
     }
-
-    lock_release (&filesys_lock);
   } 
 }
 
 void close_handler (int fd) {
-  lock_acquire (&filesys_lock);
-
   struct fd_elem *fd_elem = list_entry (fd_get_file (fd), struct fd_elem, elem);
   if (fd_elem != NULL) {
+    filesys_acquire ();
     file_close (fd_elem->file);
+    filesys_release ();
+
     list_remove (&fd_elem->elem);
   }
-
-  lock_release (&filesys_lock);
 }
 
 void seek_handler (struct intr_frame *f) {
   int fd = stack_int (f->esp, 1);
   off_t size = stack_int (f->esp, 2);
 
-  lock_acquire (&filesys_lock);
-
-  struct list_elem *elem = fd_get_file(fd);
+  struct list_elem *elem = fd_get_file (fd);
   if (elem != NULL) {
     struct file *file = list_entry (elem, struct fd_elem, elem)->file;
-    file_seek (file, size);
-  }
 
-  lock_release (&filesys_lock);
+    filesys_acquire ();
+    file_seek (file, size);
+    filesys_release ();
+  }
 }
 
 void tell_handler (struct intr_frame *f) {
   int fd = stack_int (f->esp, 1);
 
-  lock_acquire (&filesys_lock);
-
-  struct list_elem *elem = fd_get_file(fd);
+  struct list_elem *elem = fd_get_file (fd);
   if (elem != NULL) {
     struct file *file = list_entry (elem, struct fd_elem, elem)->file;
-    f->eax = file_tell (file);
-  }
 
-  lock_release (&filesys_lock);
+    filesys_acquire ();
+    f->eax = file_tell (file);
+    filesys_release ();
+  }
 }
 

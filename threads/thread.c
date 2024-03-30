@@ -261,7 +261,7 @@ thread_create (const char *name, int priority,
 struct thread*
 thread_find (tid_t tid)
 {
-  ASSERT (intr_get_level() == INTR_OFF);
+  ASSERT (intr_get_level () == INTR_OFF);
 
   struct thread *thread = NULL;
   struct list_elem *e;
@@ -281,7 +281,7 @@ thread_find (tid_t tid)
 struct dead_thread*
 thread_dead_pop (tid_t tid)
 {
-  ASSERT (intr_get_level() == INTR_OFF);
+  ASSERT (intr_get_level () == INTR_OFF);
 
   struct dead_thread *thread = NULL;
   struct list_elem *e;
@@ -290,7 +290,7 @@ thread_dead_pop (tid_t tid)
   {
     thread = list_entry (e, struct dead_thread, elem);
     if (thread->tid == tid) {
-      list_remove(e);                                             /* allows only one call to wait () per child. */
+      list_remove (e);                                             /* allows only one call to wait () per child. */
       return thread;
     }
   } 
@@ -302,7 +302,7 @@ thread_dead_pop (tid_t tid)
 bool thread_dead_push (struct thread *t) {
   ASSERT (intr_get_level () == INTR_OFF);
 
-  struct dead_thread *dt = malloc (sizeof (struct dead_thread));
+  struct dead_thread *dt = malloc (sizeof *dt);
   if (dt == NULL)
     return false;
 

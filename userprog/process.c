@@ -114,9 +114,9 @@ start_process (void *fn_args_)
     exit_handler (-1);
 
   /* free mem */
-  free(fn_args->cmdline_copy);
-  free(fn_args->file_name);
-  free(fn_args);
+  free (fn_args->cmdline_copy);
+  free (fn_args->file_name);
+  free (fn_args);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -196,8 +196,10 @@ process_exit (void)
   thread_dead_push (cur);
   intr_set_level (old_level);
 
-  if(cur->f != NULL){
-    file_close(cur->f);
+  if (cur->f != NULL) {
+    filesys_acquire ();
+    file_close (cur->f);
+    filesys_release ();
   }
   
   /* wakes up parent thread, if it's waiting. */
@@ -236,7 +238,7 @@ process_activate (void)
      interrupts. */
   tss_update ();
 }
-
+
 /* We load ELF binaries.  The following definitions are taken
    from the ELF specification, [ELF1], more-or-less verbatim.  */
 
@@ -326,6 +328,8 @@ load (struct filename_args *fn_args, void (**eip) (void), void **esp)
     goto done;
   process_activate ();
 
+  filesys_acquire ();
+
   /* Open executable file. */
   file = filesys_open (fn_args->file_name);
   if (file == NULL) 
@@ -336,18 +340,18 @@ load (struct filename_args *fn_args, void (**eip) (void), void **esp)
 
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
-      || memcmp (ehdr.e_ident, "\177ELF\1\1\1", 7)
-      || ehdr.e_type != 2
-      || ehdr.e_machine != 3
-      || ehdr.e_version != 1
-      || ehdr.e_phentsize != sizeof (struct Elf32_Phdr)
-      || ehdr.e_phnum > 1024) 
-    {
-      printf ("load: %s: error loading executable\n", fn_args->file_name);
-      goto done; 
-    }
-
+    || memcmp (ehdr.e_ident, "\177ELF\1\1\1", 7)
+    || ehdr.e_type != 2
+    || ehdr.e_machine != 3
+    || ehdr.e_version != 1
+    || ehdr.e_phentsize != sizeof (struct Elf32_Phdr)
+    || ehdr.e_phnum > 1024) 
+  {
+    printf ("load: %s: error loading executable\n", fn_args->file_name);
+    goto done; 
+  }
   file_deny_write (file);
+
   /* Read program headers. */
   file_ofs = ehdr.e_phoff;
   for (i = 0; i < ehdr.e_phnum; i++) 
@@ -417,12 +421,12 @@ load (struct filename_args *fn_args, void (**eip) (void), void **esp)
   success = true;
 
  done:
-  t->f = file;
   /* We arrive here whether the load is successful or not. */
-  //file_close (file);
+  t->f = file;
+  filesys_release ();
   return success;
 }
-
+
 /* load() helpers. */
 
 static bool install_page (void *upage, void *kpage, bool writable);
@@ -545,16 +549,16 @@ setup_stack (void **esp, struct filename_args *fn_args)
     success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
     if (success) {
       *esp = PHYS_BASE;
-      
+
       uintptr_t arg_addrs[MAX_ARGS_LEN];
       uint8_t arg_i = 0;                            /* utinX_t must be enought for MAX_ARG_LEN */
       uint32_t args_len = 0;
-     
+
       char *token, *save_ptr;
 
-      #ifdef DEBUG
-        uintptr_t start = (uintptr_t)*esp;
-      #endif 
+#ifdef DEBUG
+      uintptr_t start = (uintptr_t)*esp;
+#endif 
 
       /* adding filename to the top of the stack. */
       *esp -= strlen(fn_args->file_name) + 1;
@@ -564,7 +568,7 @@ setup_stack (void **esp, struct filename_args *fn_args)
       /* adding args to the top of the stack. */
       for (token = strtok_r (fn_args->args, " ", &save_ptr); token != NULL;
           token = strtok_r (NULL, " ", &save_ptr)) {
-        
+
         /* same as adding filename to the top of the stack. */
         *esp -= strlen(token) + 1;
         memcpy(*esp, token, strlen(token) + 1);
@@ -592,7 +596,6 @@ setup_stack (void **esp, struct filename_args *fn_args)
       memcpy(*esp, &argv, sizeof(char**));
 
       /* ardd argc */
-      // TODO: sizeof (int)
       *esp -= sizeof(int);
       memcpy(*esp, &args_len, sizeof(int));
 
@@ -600,11 +603,11 @@ setup_stack (void **esp, struct filename_args *fn_args)
       *esp -= sizeof(char**);
       memset(*esp, 0, sizeof(char**));
 
-      #ifdef DEBUG
-        char buf[start - (uint32_t)*esp + 1];
-        memcpy(buf, *esp, start - (uint32_t)*esp);
-        hex_dump((int)*esp, buf, start - (uintptr_t)*esp, true);
-      #endif
+#ifdef DEBUG
+      char buf[start - (uint32_t)*esp + 1];
+      memcpy(buf, *esp, start - (uint32_t)*esp);
+      hex_dump((int)*esp, buf, start - (uintptr_t)*esp, true);
+#endif
     } else {
       palloc_free_page (kpage);
     }
