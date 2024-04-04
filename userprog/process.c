@@ -148,7 +148,7 @@ process_wait (tid_t child_tid)
 
   /* finding an alive child process. */
   alive_child = thread_find (child_tid);                  /* find an alive child process. */
-  if (alive_child == NULL) {                             
+  if (alive_child == NULL || !alive_child->allow_wait) {                             
     dead_child = thread_dead_pop (child_tid);             /* find a dead child process. */
     if (dead_child == NULL) {
       intr_set_level (old_level);
@@ -190,18 +190,20 @@ process_exit (void)
 
   /* Process Termination Message */
   printf ("%s: exit(%d)\n", cur->name, cur->exit_status);
- 
-  /* Save exit status. */
-  enum intr_level old_level = intr_disable ();
-  thread_dead_push (cur);
-  intr_set_level (old_level);
 
+  /* close source file. */
   if (cur->f != NULL) {
     filesys_acquire ();
     file_close (cur->f);
     filesys_release ();
   }
-  
+
+  /* save exit status. */
+  enum intr_level old_level = intr_disable ();
+  thread_dead_push (cur);
+  cur->allow_wait = false;
+  intr_set_level (old_level);
+
   /* wakes up parent thread, if it's waiting. */
   sema_up (&cur->wait_sema);
 

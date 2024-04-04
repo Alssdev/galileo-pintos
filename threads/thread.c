@@ -575,6 +575,7 @@ init_thread (struct thread *t, const char *name, int priority)
   
 #ifdef USERPROG
   /* this sema allows othre process to 'join' this process. */
+  t->allow_wait = true;
   sema_init(&t->wait_sema, 0);
   list_init(&t->fds);
   /* actually my own exit status */

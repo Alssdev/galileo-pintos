@@ -108,6 +108,8 @@ struct thread
     struct file *f;                         /* File that is being execute */
     struct thread *parent;
     uint32_t *pagedir;                      /* Page directory. */
+
+    bool allow_wait;
     struct semaphore wait_sema;             /* This sema allows othres threads to `join` this one. */
     uint32_t exit_status;                   /* exit status. */
     enum exec_status exec_status;           /* does child was created? */
