@@ -43,7 +43,8 @@ void filesys_release (void) {
   lock_release (&filesys_lock);
 }
 
-// TODO: add a comment here.
+/* Inits all structs required for syscalls. Also enables
+ * 0x30 interrupt as syscalls.*/
 void syscall_init (void) {
   /* structs MUST be initilizated before enabling syscalls. */
   lock_init (&filesys_lock);
@@ -52,7 +53,7 @@ void syscall_init (void) {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
-// TODO: add a comment here.
+/* A general handler for all syscalls. */
 static void
 syscall_handler (struct intr_frame *f) 
 {
@@ -122,7 +123,8 @@ syscall_handler (struct intr_frame *f)
   }
 }
 
-// TODO: add comment here
+/* Validates if addr points to a valid memory byte for the
+ * current user program.*/
 bool is_valid_addr (void* addr) {
   if (is_user_vaddr (addr)) {
     if (pagedir_get_page (thread_current ()->pagedir, addr) != NULL) {
@@ -181,7 +183,8 @@ static char *stack_str (void *esp, uint8_t offset) {
   return addr;
 }
 
-/* TODO: add a comment here. */
+/* Uses the file descriptor param `fd` to searh a 
+ * file opened by the current user program.*/
 struct list_elem *fd_get_file (int fd) {
   struct fd_elem *fd_elem;
   struct list_elem *e;
@@ -350,14 +353,14 @@ void close_handler (int fd) {
 
 void seek_handler (struct intr_frame *f) {
   int fd = stack_int (f->esp, 1);
-  off_t size = stack_int (f->esp, 2);
+  off_t new_pos = stack_int (f->esp, 2);
 
   struct list_elem *elem = fd_get_file (fd);
   if (elem != NULL) {
     struct file *file = list_entry (elem, struct fd_elem, elem)->file;
 
     filesys_acquire ();
-    file_seek (file, size);
+    file_seek (file, new_pos);
     filesys_release ();
   }
 }
