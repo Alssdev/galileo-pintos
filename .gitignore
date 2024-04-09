@@ -6,3 +6,5 @@ tags
 *.o
 .*.swp
 my_files/
+compile_commands.json
+.cache/

@@ -1,6 +1,7 @@
 #ifndef THREADS_THREAD_H
 #define THREADS_THREAD_H
 
+#include "threads/synch.h"
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
@@ -13,6 +14,12 @@ enum thread_status
     THREAD_READY,       /* Not running but ready to run. */
     THREAD_BLOCKED,     /* Waiting for an event to trigger. */
     THREAD_DYING        /* About to be destroyed. */
+  };
+
+enum exec_status
+  {
+    ERROR,
+    SUCCESS
   };
 
 /* Thread identifier type.
@@ -101,11 +108,26 @@ struct thread
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
-    uint32_t *pagedir;                  /* Page directory. */
+    struct file *f;                         /* File that is being execute */
+    struct thread *parent;
+    uint32_t *pagedir;                      /* Page directory. */
+
+    bool allow_wait;
+    struct semaphore wait_sema;             /* This sema allows othres threads to `join` this one. */
+    uint32_t exit_status;                   /* exit status. */
+    enum exec_status exec_status;           /* does child was created? */
+    struct list fds;                        /* file descriptor list. */
 #endif 
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
+  };
+
+struct dead_thread
+  {
+    tid_t tid;                          /* Thread identifier. */
+    uint32_t exit_status;               /* Exit status. */
+    struct list_elem elem;              /* List elem. */
   };
 
 /* If false (default), use round-robin scheduler.
@@ -122,6 +144,9 @@ void thread_print_stats (void);
 
 typedef void thread_func (void *aux);
 tid_t thread_create (const char *name, int priority, thread_func *, void *);
+struct thread *thread_find (tid_t tid);
+struct dead_thread* thread_dead_pop (tid_t tid);
+bool thread_dead_push (struct thread *t);
 
 void thread_block (void);
 void thread_unblock (struct thread *);

@@ -4,10 +4,12 @@
 #include <random.h>
 #include <stdio.h>
 #include <string.h>
+#include "devices/timer.h"
 #include "threads/flags.h"
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
 #include "threads/palloc.h"
+#include "threads/malloc.h"
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
@@ -30,6 +32,11 @@ static struct list ready_list;
 /* List of all processes.  Processes are added to this list
    when they are first scheduled and removed when they exit. */
 static struct list all_list;
+
+/* List a finished processes. Processes are added to this list
+ * why process_exit () is called. Processes are removed from this
+ * list when process_wait() is called. */
+static struct list dead_list;
 
 /* Idle thread. */
 static struct thread *idle_thread;
@@ -96,6 +103,7 @@ thread_init (void)
   list_init (&sleep_list);
   list_init (&ready_list);
   list_init (&all_list);
+  list_init (&dead_list);
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
@@ -131,7 +139,7 @@ void sleep_thread(int64_t ticks_to_sleep) {
 
   /* remove current thread from ready_list  */
   list_push_back (&sleep_list, &curr_thread->elem);
-  thread_block(); /* this function removes the thread from ready_list */
+  thread_block (); /* this function removes the thread from ready_list */
 
   /* enable interruptions */
   intr_set_level (old_level);
@@ -236,6 +244,10 @@ thread_create (const char *name, int priority,
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
 
+#ifdef USERPROG
+  t->parent = thread_current ();               /* set who will be my parent process */
+#endif /* ifdef USERPROG */
+
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
   kf->eip = NULL;
@@ -256,6 +268,66 @@ thread_create (const char *name, int priority,
 
   return tid;
 }
+
+/* Look up for tid in all active threads. If the thread is not found, then 
+ * NULL will be returned. */
+struct thread*
+thread_find (tid_t tid)
+{
+  ASSERT (intr_get_level () == INTR_OFF);
+
+  struct thread *thread = NULL;
+  struct list_elem *e;
+  for (e = list_begin (&all_list); e != list_end (&all_list);
+           e = list_next (e))
+  {
+    thread = list_entry (e, struct thread, allelem);
+    if (thread->tid == tid)
+      return thread;
+  } 
+
+  return NULL;
+}
+
+/* Look up for tid in all finished threads. If the thread is not found, then 
+ * NULL will be returned. */
+struct dead_thread*
+thread_dead_pop (tid_t tid)
+{
+  ASSERT (intr_get_level () == INTR_OFF);
+
+  struct dead_thread *thread = NULL;
+  struct list_elem *e;
+  for (e = list_begin (&dead_list); e != list_end (&dead_list);
+           e = list_next (e))
+  {
+    thread = list_entry (e, struct dead_thread, elem);
+    if (thread->tid == tid) {
+      list_remove (e);                                             /* allows only one call to wait () per child. */
+      return thread;
+    }
+  } 
+
+  return NULL;
+}
+
+#ifdef USERPROG
+/* Inserts a new dead thread entry to dead_list based in t. */
+bool thread_dead_push (struct thread *t) {
+  ASSERT (intr_get_level () == INTR_OFF);
+
+  struct dead_thread *dt = malloc (sizeof *dt);
+  if (dt == NULL)
+    return false;
+
+  dt->tid = t->tid;
+  dt->exit_status = t->exit_status;
+
+  list_push_front (&dead_list, &dt->elem);
+
+  return true;
+}
+#endif /* ifdef USERPROG */
 
 /* Puts the current thread to sleep.  It will not be scheduled
    again until awoken by thread_unblock().
@@ -509,7 +581,7 @@ kernel_thread (thread_func *function, void *aux)
   function (aux);       /* Execute the thread function. */
   thread_exit ();       /* If function() returns, kill the thread. */
 }
-
+
 /* Returns the running thread. */
 struct thread *
 running_thread (void) 
@@ -551,6 +623,15 @@ init_thread (struct thread *t, const char *name, int priority)
   /* init internal lists */
   t->waiting_for_lock = NULL;
   list_init(&t->donation_list);
+
+#ifdef USERPROG
+  /* this sema allows othre process to 'join' this process. */
+  t->allow_wait = true;
+  sema_init(&t->wait_sema, 0);
+  list_init(&t->fds);
+  /* actually my own exit status */
+  t->exit_status = 0;
+#endif /* ifdef USERPROG */
 
   t->magic = THREAD_MAGIC;
 
