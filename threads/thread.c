@@ -130,7 +130,6 @@ thread_start (void)
 }
 
 void sleep_thread(int64_t ticks_to_sleep) {
-  /* ? esto debe ser una nueva funcion? */
   enum intr_level old_level = intr_disable ();
 
   /* assign sleep time to current thread  */
@@ -167,7 +166,7 @@ awake_sleeping_thread (int64_t ticks)
 
 /* This function compares threads by their priority. When used in a
  * list sort, this function produces a descending ordered list. */
-bool thread_less_func (const struct list_elem *a, const struct list_elem *b, void *aux)
+bool thread_less_func (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
   {
     ASSERT (intr_get_level () == INTR_OFF);
 
@@ -698,9 +697,9 @@ thread_top (void) {
 void
 thread_schedule_tail (struct thread *prev)
 {
-  struct thread *cur = running_thread ();
-  
   ASSERT (intr_get_level () == INTR_OFF);
+
+  struct thread *cur = running_thread ();
 
   /* Mark us as running. */
   cur->status = THREAD_RUNNING;
@@ -744,8 +743,9 @@ schedule (void)
   ASSERT (cur->status != THREAD_RUNNING);
   ASSERT (is_thread (next));
 
-  if (cur != next)
+  if (cur != next) {
     prev = switch_threads (cur, next);
+  }
   thread_schedule_tail (prev);
 }
 

@@ -31,7 +31,8 @@
 #include <string.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
-
+#include "threads/init.h"
+#include "threads/malloc.h"
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
    manipulating it:
@@ -174,7 +175,7 @@ sema_test_helper (void *sema_)
  * do not use.
  * */
 bool
-sema_elem_less_func (const struct list_elem *a, const struct list_elem *b, void *aux)
+sema_elem_less_func (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
   {
     struct thread *thread_a = (list_entry(a, struct semaphore_elem, elem))->top_thread;
     struct thread *thread_b = (list_entry(b, struct semaphore_elem, elem))->top_thread;
@@ -220,12 +221,12 @@ lock_init (struct lock *lock)
 void
 lock_acquire (struct lock *lock)
 { 
-  enum intr_level old_level = intr_disable();
-
   ASSERT (lock != NULL);
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
   ASSERT (thread_current ()->waiting_for_lock == NULL);
+
+  enum intr_level old_level = intr_disable();
 
   /* is lock available? */
   if (!lock_try_acquire (lock)) {
@@ -257,17 +258,17 @@ lock_donate_priority (struct lock *lock, int priority)
   struct lock *lock_i = lock;
    do {
     // donation
-    struct donation_list_elem d_elem;
-    d_elem.lock = lock;
-    d_elem.priority = priority;
-    list_insert_ordered(&lock->holder->donation_list, &d_elem.elem, &donation_less_func, NULL);
+    struct donation_list_elem *d_elem = malloc (sizeof (struct donation_list_elem)); 
+    d_elem->lock = lock_i;
+    d_elem->priority = priority; 
+    list_insert_ordered (&lock_i->holder->donation_list, &d_elem->elem, &donation_less_func, NULL);
 
-    lock_i = lock->holder->waiting_for_lock;
+    lock_i = lock_i->holder->waiting_for_lock; 
   } while (lock_i != NULL);
 }
 
 bool
-donation_less_func (const struct list_elem *a, const struct list_elem *b, void *aux)
+donation_less_func (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
 {
   struct donation_list_elem *elem_a = list_entry(a, struct donation_list_elem, elem);
   struct donation_list_elem *elem_b = list_entry(b, struct donation_list_elem, elem);
@@ -303,24 +304,32 @@ lock_try_acquire (struct lock *lock)
 void
 lock_release (struct lock *lock) 
 {
-  enum intr_level old_level = intr_disable();
-
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
   ASSERT (thread_current ()->waiting_for_lock == NULL);
 
-  struct list *donation_list = &thread_current ()->donation_list;
+  enum intr_level old_level = intr_disable();
 
-  struct list_elem *e;
-  for (e = list_begin (donation_list); e != list_end (donation_list); e = list_next (e)) {
-    struct donation_list_elem *d_elem = list_entry(e, struct donation_list_elem, elem); 
-    if (d_elem->lock == lock)
-      list_remove(e);
+  if (is_boot_completed) {
+    struct list *donation_list = &thread_current ()->donation_list;
+
+    struct list_elem *e;
+    for (e = list_begin (donation_list); e != list_end (donation_list); e = list_next (e)) {
+      struct donation_list_elem *d_elem = list_entry (e, struct donation_list_elem, elem); 
+      if (d_elem->lock == lock) {
+        list_remove (e);
+        e = e->prev;
+        free (d_elem);
+      }
+      // TODO: where is the free statement for this elements?
+    }
   }
   
   lock->holder = NULL;
   sema_up (&lock->semaphore);
-  thread_yield();
+
+  if (is_boot_completed)
+    thread_yield();
 
   intr_set_level(old_level);
 }

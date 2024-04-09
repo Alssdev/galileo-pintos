@@ -40,8 +40,8 @@ bool lock_held_by_current_thread (const struct lock *);
 void lock_donate_priority (struct lock*, int priority);
 
 struct donation_list_elem {
-  struct lock *lock;
   int priority;
+  struct lock *lock;
   struct list_elem elem;
 };
 bool donation_less_func (const struct list_elem *a, const struct list_elem *b, void *aux);

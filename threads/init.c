@@ -40,6 +40,7 @@
 
 /* Page directory with kernel mappings only. */
 uint32_t *init_page_dir;
+bool is_boot_completed = false;
 
 #ifdef FILESYS
 /* -f: Format the file system? */
@@ -128,6 +129,7 @@ main (void)
 #endif
 
   printf ("Boot complete.\n");
+  is_boot_completed = true;
   
   /* Run actions specified on kernel command line. */
   run_actions (argv);

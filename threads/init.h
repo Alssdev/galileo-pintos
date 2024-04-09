@@ -8,5 +8,6 @@
 
 /* Page directory with kernel mappings only. */
 extern uint32_t *init_page_dir;
+extern bool is_boot_completed;
 
 #endif /* threads/init.h */
