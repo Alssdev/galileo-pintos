@@ -122,10 +122,10 @@ sema_up (struct semaphore *sema)
     struct thread *next_waiter = list_entry (list_max (&sema->waiters, &thread_less_func, NULL), struct thread, elem);
     
     // remove from waiters list
-    list_remove(&next_waiter->elem);
+    list_remove (&next_waiter->elem);
     
     // complete wake up!
-    thread_unblock(next_waiter);
+    thread_unblock (next_waiter);
   } 
 
   intr_set_level (old_level);
@@ -221,29 +221,30 @@ lock_init (struct lock *lock)
 void
 lock_acquire (struct lock *lock)
 { 
+  struct thread *cur = thread_current ();
   ASSERT (lock != NULL);
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
-  ASSERT (thread_current ()->waiting_for_lock == NULL);
+  ASSERT (cur->waiting_for_lock == NULL);
 
   enum intr_level old_level = intr_disable();
 
   /* is lock available? */
   if (!lock_try_acquire (lock)) {
-    // donate priority to decrement waiting time.
+    /* donate priority to decrement waiting time. */
     lock_donate_priority (lock, thread_get_priority ());
  
-    // start waiting...
-    thread_current ()->waiting_for_lock = lock;
+    /* start waiting... */
+    cur->waiting_for_lock = lock;
 
     sema_down (&lock->semaphore);
 
-    // set lock as mine
-    lock->holder = thread_current ();
+    /* set lock as mine */
+    lock->holder = cur;
   }
 
-  // mark thread as Not waiting
-  thread_current ()->waiting_for_lock = NULL;
+  /* mark thread as Not waiting */
+  cur->waiting_for_lock = NULL;
 
   intr_set_level(old_level);
 }
@@ -304,14 +305,16 @@ lock_try_acquire (struct lock *lock)
 void
 lock_release (struct lock *lock) 
 {
+  struct thread *cur = thread_current ();
+
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
-  ASSERT (thread_current ()->waiting_for_lock == NULL);
+  ASSERT (cur->waiting_for_lock == NULL);
 
-  enum intr_level old_level = intr_disable();
+  enum intr_level old_level = intr_disable ();
 
   if (is_boot_completed) {
-    struct list *donation_list = &thread_current ()->donation_list;
+    struct list *donation_list = &cur->donation_list;
 
     struct list_elem *e;
     for (e = list_begin (donation_list); e != list_end (donation_list); e = list_next (e)) {
@@ -321,17 +324,13 @@ lock_release (struct lock *lock)
         e = e->prev;
         free (d_elem);
       }
-      // TODO: where is the free statement for this elements?
     }
   }
   
   lock->holder = NULL;
   sema_up (&lock->semaphore);
 
-  if (is_boot_completed)
-    thread_yield();
-
-  intr_set_level(old_level);
+  intr_set_level (old_level);
 }
 
 /* Returns true if the current thread holds LOCK, false

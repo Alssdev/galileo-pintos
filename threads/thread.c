@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "devices/timer.h"
+#include "list.h"
 #include "threads/flags.h"
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
@@ -440,7 +441,7 @@ thread_yield (void)
   struct thread *cur = thread_current ();
 
   if (cur != idle_thread)
-    list_insert_ordered(&ready_list, &cur->elem, &thread_less_func, NULL); 
+    list_insert_ordered (&ready_list, &cur->elem, &thread_less_func, NULL); 
   
   cur->status = THREAD_READY;
   schedule ();
@@ -483,15 +484,19 @@ int
 thread_calc_priority (struct thread *t)
 {
   ASSERT(t != NULL);
+  enum intr_level old_level = intr_disable ();
 
   if (!list_empty(&t->donation_list)) {
     // debug
     int highest_received_priority = list_entry(list_back(&t->donation_list), struct donation_list_elem, elem)->priority;
     
-    if (t->priority <= highest_received_priority)
+    if (t->priority <= highest_received_priority) {
+      intr_set_level (old_level);
       return highest_received_priority;
+    }
   }
 
+  intr_set_level (old_level);
   return t->priority;
 }
 /* Returns the current thread's priority. */
@@ -660,10 +665,11 @@ alloc_frame (struct thread *t, size_t size)
 static struct thread *
 next_thread_to_run (void) 
 {
-  if (list_empty (&ready_list))
+  if (list_empty (&ready_list)) {
     return idle_thread;
-  else
+  } else {
     return list_entry (list_pop_back (&ready_list), struct thread, elem);
+  }
 }
 
 /* This function peeks the thread with the highest priority in
