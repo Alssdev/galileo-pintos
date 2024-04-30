@@ -225,13 +225,16 @@ void write_handler (struct intr_frame *f)
 }
 
 void exit_handler (uint32_t exit_status) {
-  thread_current ()->exit_status = exit_status;        /* set my own exit status. */
-  struct list *fds_list = &thread_current ()->fds;
-
+  struct list *fds_list;
   struct list_elem *e;
+  struct fd_elem *f;
+
+  thread_current ()->exit_status = exit_status;        /* set my own exit status. */
+  fds_list = &thread_current ()->fds;
+
   for (e = list_begin (fds_list); e != list_end (fds_list); e = list_next (e))
   {
-    struct fd_elem *f = list_entry (e, struct fd_elem, elem);
+    f = list_entry (e, struct fd_elem, elem);
     e = f->elem.prev;
     close_handler (f->fd);
   }
@@ -340,7 +343,10 @@ void read_handler (struct intr_frame *f) {
 }
 
 void close_handler (int fd) {
-  struct fd_elem *fd_elem = list_entry (fd_get_file (fd), struct fd_elem, elem);
+  struct fd_elem *fd_elem;
+
+  fd_elem = list_entry (fd_get_file (fd), struct fd_elem, elem);
+
   if (fd_elem != NULL) {
     filesys_acquire ();
     file_close (fd_elem->file);

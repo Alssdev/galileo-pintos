@@ -225,9 +225,9 @@ lock_acquire (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
-  ASSERT (cur->waiting_for_lock == NULL);
+  // ASSERT (cur->waiting_for_lock == NULL);
 
-  enum intr_level old_level = intr_disable();
+  enum intr_level old_level = intr_disable ();
 
   /* is lock available? */
   if (!lock_try_acquire (lock)) {
@@ -241,25 +241,23 @@ lock_acquire (struct lock *lock)
 
     /* set lock as mine */
     lock->holder = cur;
+    cur->waiting_for_lock = NULL;
   }
 
-  /* mark thread as Not waiting */
-  cur->waiting_for_lock = NULL;
-
-  intr_set_level(old_level);
+  intr_set_level (old_level);
 }
 
 void
 lock_donate_priority (struct lock *lock, int priority)
 {
   ASSERT (lock != NULL);
-  ASSERT(lock->holder != NULL);
-  ASSERT(intr_get_level () == INTR_OFF);
+  ASSERT (lock->holder != NULL);
+  ASSERT (intr_get_level () == INTR_OFF);
 
   struct lock *lock_i = lock;
    do {
     // donation
-    struct donation_list_elem *d_elem = malloc (sizeof (struct donation_list_elem)); 
+    struct donation_list_elem *d_elem = malloc (sizeof *d_elem); 
     d_elem->lock = lock_i;
     d_elem->priority = priority; 
     list_insert_ordered (&lock_i->holder->donation_list, &d_elem->elem, &donation_less_func, NULL);
@@ -305,20 +303,24 @@ lock_try_acquire (struct lock *lock)
 void
 lock_release (struct lock *lock) 
 {
-  struct thread *cur = thread_current ();
+  struct thread *cur;
+  struct list_elem *e;
+  enum intr_level old_level;
+  struct donation_list_elem *d_elem;
+
+  cur = thread_current ();
 
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
-  ASSERT (cur->waiting_for_lock == NULL);
+  // ASSERT (cur->waiting_for_lock == NULL);
 
-  enum intr_level old_level = intr_disable ();
+  old_level = intr_disable ();
 
   if (is_boot_completed) {
     struct list *donation_list = &cur->donation_list;
 
-    struct list_elem *e;
     for (e = list_begin (donation_list); e != list_end (donation_list); e = list_next (e)) {
-      struct donation_list_elem *d_elem = list_entry (e, struct donation_list_elem, elem); 
+      d_elem = list_entry (e, struct donation_list_elem, elem); 
       if (d_elem->lock == lock) {
         list_remove (e);
         e = e->prev;
@@ -391,7 +393,7 @@ cond_wait (struct condition *cond, struct lock *lock)
   waiter.top_thread =  thread_current ();
 
   // keep waiter list ordered
-  list_insert_ordered(&cond->waiters, &waiter.elem, &sema_elem_less_func, NULL);
+  list_insert_ordered (&cond->waiters, &waiter.elem, &sema_elem_less_func, NULL);
   lock_release (lock);
   sema_down (&waiter.semaphore);
   lock_acquire (lock);

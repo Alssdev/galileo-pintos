@@ -8,7 +8,7 @@
 #include "filesys/file.h"
 #include "filesys/filesys.h"
 #include "threads/malloc.h"
-#include "threads/palloc.h"
+#include "vm/falloc.h"
 #include "threads/vaddr.h"
 
 /* List files in the root directory. */
@@ -42,7 +42,7 @@ fsutil_cat (char **argv)
   file = filesys_open (file_name);
   if (file == NULL)
     PANIC ("%s: open failed", file_name);
-  buffer = palloc_get_page (PAL_ASSERT);
+  buffer = falloc_get_page (PAL_ASSERT);
   for (;;) 
     {
       off_t pos = file_tell (file);
@@ -52,7 +52,7 @@ fsutil_cat (char **argv)
 
       hex_dump (pos, buffer, n, true); 
     }
-  palloc_free_page (buffer);
+  falloc_free_page (buffer);
   file_close (file);
 }
 

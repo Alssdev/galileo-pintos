@@ -15,7 +15,7 @@
 #include "filesys/filesys.h"
 #include "threads/flags.h"
 #include "threads/interrupt.h"
-#include "threads/palloc.h"
+#include "vm/falloc.h"
 #include "threads/malloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
@@ -35,10 +35,10 @@ process_execute (const char *cmdline)
   
   /* allocate filename_args */
   tid_t tid;
-  struct filename_args *fn_args = malloc(sizeof(struct filename_args));
+  struct filename_args *fn_args = malloc (sizeof (struct filename_args));
 
   /* creating a modificable copy of cmdline. */
-  str_len = strlen(cmdline);                                  /* len of cmdline string */
+  str_len = strlen (cmdline);                                  /* len of cmdline string */
   fn_args->cmdline_copy = malloc (str_len + 1);               /* reserve mem for file_name_copy, + 1 because of \0 */
   if (fn_args->cmdline_copy == NULL) {
     free (fn_args);
@@ -47,15 +47,15 @@ process_execute (const char *cmdline)
   strlcpy (fn_args->cmdline_copy, cmdline, str_len + 1);      /* create the copy of file_name */
 
   /* extracting filename from cmdline param. */
-  token = strtok_r(fn_args->cmdline_copy, " ", &save_ptr);    /* separating filename from cmdline param. */
-  str_len = strlen(token);                                    /* len of filename string. */
-  fn_args->file_name = malloc(str_len + 1);                   /* reserve mem for fn_args->filename, + 1 because of \0 */
+  token = strtok_r (fn_args->cmdline_copy, " ", &save_ptr);    /* separating filename from cmdline param. */
+  str_len = strlen (token);                                    /* len of filename string. */
+  fn_args->file_name = malloc (str_len + 1);                   /* reserve mem for fn_args->filename, + 1 because of \0 */
   if (fn_args->file_name == NULL) {
     free (fn_args->cmdline_copy);
     free (fn_args);
     return TID_ERROR;
   }
-  strlcpy(fn_args->file_name, token, str_len + 1);            /* create the copy of filename */
+  strlcpy (fn_args->file_name, token, str_len + 1);            /* create the copy of filename */
 
   /* creating a copy of cmdline args. */
   fn_args->args = save_ptr;                                   /* pass as reference only, because cmdline_copy is a copy already
@@ -140,11 +140,12 @@ start_process (void *fn_args_)
 int
 process_wait (tid_t child_tid) 
 {
+  enum intr_level old_level;
   struct thread *alive_child;
   struct dead_thread *dead_child;
   int exit_status;
 
-  enum intr_level old_level = intr_disable ();            /* synchronization for all_list. */
+  old_level = intr_disable ();            /* synchronization for all_list. */
 
   /* finding an alive child process. */
   alive_child = thread_find (child_tid);                  /* find an alive child process. */
@@ -184,7 +185,8 @@ process_wait (tid_t child_tid)
 /* Free the current process's resources. */
 void
 process_exit (void)
-{
+{ 
+  enum intr_level old_level;
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
@@ -199,13 +201,14 @@ process_exit (void)
   }
 
   /* save exit status. */
-  enum intr_level old_level = intr_disable ();
+  old_level = intr_disable ();
   thread_dead_push (cur);
   cur->allow_wait = false;
   intr_set_level (old_level);
 
   /* wakes up parent thread, if it's waiting. */
   sema_up (&cur->wait_sema);
+
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -510,14 +513,14 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
       /* Get a page of memory. */
-      uint8_t *kpage = palloc_get_page (PAL_USER);
+      uint8_t *kpage = falloc_get_page (PAL_USER);
       if (kpage == NULL)
         return false;
 
       /* Load this page. */
       if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
         {
-          palloc_free_page (kpage);
+          falloc_free_page (kpage);
           return false; 
         }
       memset (kpage + page_read_bytes, 0, page_zero_bytes);
@@ -525,7 +528,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       /* Add the page to the process's address space. */
       if (!install_page (upage, kpage, writable)) 
         {
-          palloc_free_page (kpage);
+          falloc_free_page (kpage);
           return false; 
         }
 
@@ -545,7 +548,7 @@ setup_stack (void **esp, struct filename_args *fn_args)
   uint8_t *kpage;
   bool success = false;
 
-  kpage = palloc_get_page (PAL_USER | PAL_ZERO);
+  kpage = falloc_get_page (PAL_USER | PAL_ZERO);
   if (kpage != NULL) 
     {
     success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
@@ -611,7 +614,7 @@ setup_stack (void **esp, struct filename_args *fn_args)
       hex_dump((int)*esp, buf, start - (uintptr_t)*esp, true);
 #endif
     } else {
-      palloc_free_page (kpage);
+      falloc_free_page (kpage);
     }
   }
   return success;
@@ -623,7 +626,7 @@ setup_stack (void **esp, struct filename_args *fn_args)
    otherwise, it is read-only.
    UPAGE must not already be mapped.
    KPAGE should probably be a page obtained from the user pool
-   with palloc_get_page().
+   with falloc_get_page().
    Returns true on success, false if UPAGE is already mapped or
    if memory allocation fails. */
 static bool

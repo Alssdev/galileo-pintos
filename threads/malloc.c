@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-#include "threads/palloc.h"
+#include "vm/falloc.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
 
@@ -107,7 +107,7 @@ malloc (size_t size)
       /* SIZE is too big for any descriptor.
          Allocate enough pages to hold SIZE plus an arena. */
       size_t page_cnt = DIV_ROUND_UP (size + sizeof *a, PGSIZE);
-      a = palloc_get_multiple (0, page_cnt);
+      a = falloc_get_multiple (0, page_cnt);
       if (a == NULL)
         return NULL;
 
@@ -127,7 +127,7 @@ malloc (size_t size)
       size_t i;
 
       /* Allocate a page. */
-      a = palloc_get_page (0);
+      a = falloc_get_page (0);
       if (a == NULL) 
         {
           lock_release (&d->lock);
@@ -249,7 +249,7 @@ free (void *p)
                   struct block *b = arena_to_block (a, i);
                   list_remove (&b->free_elem);
                 }
-              palloc_free_page (a);
+              falloc_free_page (a);
             }
 
           lock_release (&d->lock);
@@ -257,7 +257,7 @@ free (void *p)
       else
         {
           /* It's a big block.  Free its pages. */
-          palloc_free_multiple (a, a->free_cnt);
+          falloc_free_multiple (a, a->free_cnt);
           return;
         }
     }

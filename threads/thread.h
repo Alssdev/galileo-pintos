@@ -74,7 +74,7 @@ typedef int tid_t;
          large.  If a stack overflows, it will corrupt the thread
          state.  Thus, kernel functions should not allocate large
          structures or arrays as non-static local variables.  Use
-         dynamic allocation with malloc() or palloc_get_page()
+         dynamic allocation with malloc() or falloc_get_page()
          instead.
 
    The first symptom of either of these problems will probably be

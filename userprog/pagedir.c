@@ -4,7 +4,7 @@
 #include <string.h>
 #include "threads/init.h"
 #include "threads/pte.h"
-#include "threads/palloc.h"
+#include "vm/falloc.h"
 
 static uint32_t *active_pd (void);
 static void invalidate_pagedir (uint32_t *);
@@ -16,7 +16,7 @@ static void invalidate_pagedir (uint32_t *);
 uint32_t *
 pagedir_create (void) 
 {
-  uint32_t *pd = palloc_get_page (0);
+  uint32_t *pd = falloc_get_page (0);
   if (pd != NULL)
     memcpy (pd, init_page_dir, PGSIZE);
   return pd;
@@ -41,10 +41,10 @@ pagedir_destroy (uint32_t *pd)
         
         for (pte = pt; pte < pt + PGSIZE / sizeof *pte; pte++)
           if (*pte & PTE_P) 
-            palloc_free_page (pte_get_page (*pte));
-        palloc_free_page (pt);
+            falloc_free_page (pte_get_page (*pte));
+        falloc_free_page (pt);
       }
-  palloc_free_page (pd);
+  falloc_free_page (pd);
 }
 
 /* Returns the address of the page table entry for virtual
@@ -70,7 +70,7 @@ lookup_page (uint32_t *pd, const void *vaddr, bool create)
     {
       if (create)
         {
-          pt = palloc_get_page (PAL_ZERO);
+          pt = falloc_get_page (PAL_ZERO);
           if (pt == NULL) 
             return NULL; 
       
@@ -90,7 +90,7 @@ lookup_page (uint32_t *pd, const void *vaddr, bool create)
    address KPAGE.
    UPAGE must not already be mapped.
    KPAGE should probably be a page obtained from the user pool
-   with palloc_get_page().
+   with falloc_get_page ().
    If WRITABLE is true, the new page is read/write;
    otherwise it is read-only.
    Returns true if successful, false if memory allocation

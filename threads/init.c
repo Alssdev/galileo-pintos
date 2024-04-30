@@ -19,7 +19,7 @@
 #include "threads/io.h"
 #include "threads/loader.h"
 #include "threads/malloc.h"
-#include "threads/palloc.h"
+#include "vm/falloc.h"
 #include "threads/pte.h"
 #include "threads/thread.h"
 #ifdef USERPROG
@@ -31,6 +31,8 @@
 #else
 #include "tests/threads/tests.h"
 #endif
+#ifdef VM
+#endif /* ifdef VM */
 #ifdef FILESYS
 #include "devices/block.h"
 #include "devices/ide.h"
@@ -55,7 +57,7 @@ static const char *swap_bdev_name;
 #endif
 #endif /* FILESYS */
 
-/* -ul: Maximum number of pages to put into palloc's user pool. */
+/* -ul: Maximum number of pages to put into falloc's user pool. */
 static size_t user_page_limit = SIZE_MAX;
 
 static void bss_init (void);
@@ -97,6 +99,9 @@ main (void)
 
   /* Initialize memory system. */
   palloc_init (user_page_limit);
+#ifdef VM
+  frame_table_init ();
+#endif /* ifdef VM */
   malloc_init ();
   paging_init ();
 
@@ -163,7 +168,7 @@ paging_init (void)
   size_t page;
   extern char _start, _end_kernel_text;
 
-  pd = init_page_dir = palloc_get_page (PAL_ASSERT | PAL_ZERO);
+  pd = init_page_dir = falloc_get_page (PAL_ASSERT | PAL_ZERO);
   pt = NULL;
   for (page = 0; page < init_ram_pages; page++)
     {
@@ -175,7 +180,7 @@ paging_init (void)
 
       if (pd[pde_idx] == 0)
         {
-          pt = palloc_get_page (PAL_ASSERT | PAL_ZERO);
+          pt = falloc_get_page (PAL_ASSERT | PAL_ZERO);
           pd[pde_idx] = pde_create (pt);
         }
 

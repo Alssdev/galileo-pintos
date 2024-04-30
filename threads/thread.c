@@ -6,10 +6,8 @@
 #include <string.h>
 #include "devices/timer.h"
 #include "list.h"
-#include "threads/flags.h"
 #include "threads/interrupt.h"
-#include "threads/intr-stubs.h"
-#include "threads/palloc.h"
+#include "vm/falloc.h"
 #include "threads/malloc.h"
 #include "threads/switch.h"
 #include "threads/synch.h"
@@ -236,7 +234,7 @@ thread_create (const char *name, int priority,
   ASSERT (function != NULL);
 
   /* Allocate thread. */
-  t = palloc_get_page (PAL_ZERO);
+  t = falloc_get_page (PAL_ZERO);
   if (t == NULL)
     return TID_ERROR;
 
@@ -294,10 +292,11 @@ thread_find (tid_t tid)
 struct dead_thread*
 thread_dead_pop (tid_t tid)
 {
-  ASSERT (intr_get_level () == INTR_OFF);
-
   struct dead_thread *thread = NULL;
   struct list_elem *e;
+
+  ASSERT (intr_get_level () == INTR_OFF);
+
   for (e = list_begin (&dead_list); e != list_end (&dead_list);
            e = list_next (e))
   {
@@ -486,9 +485,8 @@ thread_calc_priority (struct thread *t)
   ASSERT(t != NULL);
   enum intr_level old_level = intr_disable ();
 
-  if (!list_empty(&t->donation_list)) {
-    // debug
-    int highest_received_priority = list_entry(list_back(&t->donation_list), struct donation_list_elem, elem)->priority;
+  if (!list_empty (&t->donation_list)) {
+    int highest_received_priority = list_entry (list_back (&t->donation_list), struct donation_list_elem, elem)->priority;
     
     if (t->priority <= highest_received_priority) {
       intr_set_level (old_level);
@@ -626,13 +624,13 @@ init_thread (struct thread *t, const char *name, int priority)
   
   /* init internal lists */
   t->waiting_for_lock = NULL;
-  list_init(&t->donation_list);
+  list_init (&t->donation_list);
 
 #ifdef USERPROG
   /* this sema allows othre process to 'join' this process. */
   t->allow_wait = true;
-  sema_init(&t->wait_sema, 0);
-  list_init(&t->fds);
+  sema_init (&t->wait_sema, 0);
+  list_init (&t->fds);
   /* actually my own exit status */
   t->exit_status = 0;
 #endif /* ifdef USERPROG */
@@ -722,11 +720,11 @@ thread_schedule_tail (struct thread *prev)
      thread.  This must happen late so that thread_exit() doesn't
      pull out the rug under itself.  (We don't free
      initial_thread because its memory was not obtained via
-     palloc().) */
+     falloc().) */
   if (prev != NULL && prev->status == THREAD_DYING && prev != initial_thread) 
     {
       ASSERT (prev != cur);
-      palloc_free_page (prev);
+      falloc_free_page (prev);
     }
 }
 
