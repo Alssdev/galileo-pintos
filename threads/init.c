@@ -38,6 +38,10 @@
 #include "filesys/fsutil.h"
 #endif
 
+#ifdef VM
+#include "vm/falloc.h"
+#endif
+
 /* Page directory with kernel mappings only. */
 uint32_t *init_page_dir;
 bool is_boot_completed = false;
@@ -99,6 +103,10 @@ main (void)
   palloc_init (user_page_limit);
   malloc_init ();
   paging_init ();
+
+  #ifdef VM
+  frame_table_init (); 
+  #endif /* ifdef VM */
 
   /* Segmentation. */
 #ifdef USERPROG

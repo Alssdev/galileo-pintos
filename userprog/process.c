@@ -19,6 +19,7 @@
 #include "threads/malloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "vm/falloc.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (struct filename_args *fn_args, void (**eip) (void), void **esp);
@@ -426,6 +427,7 @@ load (struct filename_args *fn_args, void (**eip) (void), void **esp)
   /* We arrive here whether the load is successful or not. */
   t->f = file;
   filesys_release ();
+
   return success;
 }
 
@@ -510,14 +512,14 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
       /* Get a page of memory. */
-      uint8_t *kpage = palloc_get_page (PAL_USER);
+      uint8_t *kpage = falloc_get_page ();
       if (kpage == NULL)
         return false;
 
       /* Load this page. */
       if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
         {
-          palloc_free_page (kpage);
+          falloc_free_page (kpage);
           return false; 
         }
       memset (kpage + page_read_bytes, 0, page_zero_bytes);
@@ -525,7 +527,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       /* Add the page to the process's address space. */
       if (!install_page (upage, kpage, writable)) 
         {
-          palloc_free_page (kpage);
+          falloc_free_page (kpage);
           return false; 
         }
 
@@ -545,7 +547,7 @@ setup_stack (void **esp, struct filename_args *fn_args)
   uint8_t *kpage;
   bool success = false;
 
-  kpage = palloc_get_page (PAL_USER | PAL_ZERO);
+  kpage = falloc_get_page ();
   if (kpage != NULL) 
     {
     success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
@@ -563,8 +565,8 @@ setup_stack (void **esp, struct filename_args *fn_args)
 #endif 
 
       /* adding filename to the top of the stack. */
-      *esp -= strlen(fn_args->file_name) + 1;
-      memcpy(*esp, fn_args->file_name, strlen(fn_args->file_name) + 1);
+      *esp -= strlen (fn_args->file_name) + 1;
+      memcpy (*esp, fn_args->file_name, strlen (fn_args->file_name) + 1);
       arg_addrs[arg_i++] = (uintptr_t)*esp;
 
       /* adding args to the top of the stack. */
@@ -572,8 +574,8 @@ setup_stack (void **esp, struct filename_args *fn_args)
           token = strtok_r (NULL, " ", &save_ptr)) {
 
         /* same as adding filename to the top of the stack. */
-        *esp -= strlen(token) + 1;
-        memcpy(*esp, token, strlen(token) + 1);
+        *esp -= strlen (token) + 1;
+        memcpy (*esp, token, strlen (token) + 1);
         arg_addrs[arg_i++] = (uintptr_t)*esp;
       }
 
@@ -581,29 +583,29 @@ setup_stack (void **esp, struct filename_args *fn_args)
 
       /* word align */
       *esp -= (uint32_t)*esp % 4;
-      memset(*esp, 0x0, arg_addrs[arg_i - 1] - (uintptr_t)*esp);
+      memset (*esp, 0x0, arg_addrs[arg_i - 1] - (uintptr_t)*esp);
 
       /* sentinel */
       *esp -= 4;
-      memset(*esp, 0x0, 4);
+      memset (*esp, 0x0, 4);
 
-      for ( /* void */ ; arg_i > 0; arg_i--) {
-        *esp -= sizeof(char*);
-        memcpy(*esp, &arg_addrs[arg_i - 1], sizeof(char*));
+      for (/* void */ ; arg_i > 0; arg_i--) {
+        *esp -= sizeof (char*);
+        memcpy (*esp, &arg_addrs[arg_i - 1], sizeof (char*));
       }
 
       /* add argv to the top of the stack */
       uintptr_t argv = (uintptr_t)*esp;
-      *esp -= sizeof(char**);
-      memcpy(*esp, &argv, sizeof(char**));
+      *esp -= sizeof (char**);
+      memcpy (*esp, &argv, sizeof (char**));
 
       /* ardd argc */
       *esp -= sizeof(int);
-      memcpy(*esp, &args_len, sizeof(int));
+      memcpy (*esp, &args_len, sizeof (int));
 
       /* add a NULL pointer as return adderss */
-      *esp -= sizeof(char**);
-      memset(*esp, 0, sizeof(char**));
+      *esp -= sizeof (char**);
+      memset (*esp, 0, sizeof (char**));
 
 #ifdef DEBUG
       char buf[start - (uint32_t)*esp + 1];
@@ -611,9 +613,10 @@ setup_stack (void **esp, struct filename_args *fn_args)
       hex_dump((int)*esp, buf, start - (uintptr_t)*esp, true);
 #endif
     } else {
-      palloc_free_page (kpage);
+      falloc_free_page (kpage);
     }
   }
+
   return success;
 }
 

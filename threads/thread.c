@@ -625,17 +625,12 @@ init_thread (struct thread *t, const char *name, int priority)
   t->priority = priority;
   
   /* init internal lists */
-  t->waiting_for_lock = NULL;
-  list_init(&t->donation_list);
-
-#ifdef USERPROG
-  /* this sema allows othre process to 'join' this process. */
   t->allow_wait = true;
-  sema_init(&t->wait_sema, 0);
-  list_init(&t->fds);
-  /* actually my own exit status */
+  t->waiting_for_lock = NULL;
+  list_init(&t->donation_list);       /* received donation list. */
+  sema_init(&t->wait_sema, 0);        /* allows othre process to 'join' this process. */
+  list_init(&t->fds);                 /* file descriptors. */
   t->exit_status = 0;
-#endif /* ifdef USERPROG */
 
   t->magic = THREAD_MAGIC;
 
