@@ -117,6 +117,9 @@ struct thread
     enum exec_status exec_status;           /* does child was created? */
     struct list fds;                        /* file descriptor list. */
 
+    /* vm. */
+    struct list page_table;
+
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };

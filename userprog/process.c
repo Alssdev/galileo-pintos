@@ -20,6 +20,7 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "vm/falloc.h"
+#include "vm/page_table.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (struct filename_args *fn_args, void (**eip) (void), void **esp);
@@ -307,9 +308,6 @@ struct Elf32_Phdr
 
 static bool setup_stack (void **esp, struct filename_args *fn_args);
 static bool validate_segment (const struct Elf32_Phdr *, struct file *);
-static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
-                          uint32_t read_bytes, uint32_t zero_bytes,
-                          bool writable);
 
 /* Loads an ELF executable from FILE_NAME into the current thread.
    Stores the executable's entry point into *EIP
@@ -405,7 +403,7 @@ load (struct filename_args *fn_args, void (**eip) (void), void **esp)
                   zero_bytes = ROUND_UP (page_offset + phdr.p_memsz, PGSIZE);
                 }
               if (!load_segment (file, file_page, (void *) mem_page,
-                                 read_bytes, zero_bytes, writable))
+                                 read_bytes, zero_bytes, writable, LAZY))
                 goto done;
             }
           else
@@ -494,48 +492,52 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
 
    Return true if successful, false if a memory allocation error
    or disk read error occurs. */
-static bool
+bool
 load_segment (struct file *file, off_t ofs, uint8_t *upage,
-              uint32_t read_bytes, uint32_t zero_bytes, bool writable) 
+              uint32_t read_bytes, uint32_t zero_bytes, bool writable, enum loading loading)
 {
   ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
   ASSERT (pg_ofs (upage) == 0);
-  ASSERT (ofs % PGSIZE == 0);
+  // ASSERT (ofs % PGSIZE == 0);
 
   file_seek (file, ofs);
-  while (read_bytes > 0 || zero_bytes > 0) 
-    {
-      /* Calculate how to fill this page.
+  while (read_bytes > 0 || zero_bytes > 0) {
+    /* Calculate how to fill this page.
          We will read PAGE_READ_BYTES bytes from FILE
          and zero the final PAGE_ZERO_BYTES bytes. */
-      size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
-      size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
+    size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
+    size_t page_zero_bytes = PGSIZE - page_read_bytes;
+
+    /* Load this page. */
+    if (loading == REAL) {
       /* Get a page of memory. */
       uint8_t *kpage = falloc_get_page ();
       if (kpage == NULL)
         return false;
-
-      /* Load this page. */
-      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
-        {
-          falloc_free_page (kpage);
-          return false; 
-        }
+      
+      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes) {
+        falloc_free_page (kpage);
+        return false; 
+      }
       memset (kpage + page_read_bytes, 0, page_zero_bytes);
 
       /* Add the page to the process's address space. */
-      if (!install_page (upage, kpage, writable)) 
-        {
-          falloc_free_page (kpage);
-          return false; 
-        }
-
-      /* Advance. */
-      read_bytes -= page_read_bytes;
-      zero_bytes -= page_zero_bytes;
-      upage += PGSIZE;
+      if (!install_page (upage, kpage, writable)) {
+        falloc_free_page (kpage);
+        return false; 
+      }
+    } else if (loading == LAZY) {
+      ptable_set_code (upage, ofs, page_read_bytes, writable);
     }
+
+    /* Advance. */
+    read_bytes -= page_read_bytes;
+    zero_bytes -= page_zero_bytes;
+    upage += PGSIZE;
+    ofs += page_read_bytes;
+  }
+
   return true;
 }
 
@@ -626,16 +628,24 @@ setup_stack (void **esp, struct filename_args *fn_args)
    otherwise, it is read-only.
    UPAGE must not already be mapped.
    KPAGE should probably be a page obtained from the user pool
-   with palloc_get_page().
+   with palloc_get_page ().
    Returns true on success, false if UPAGE is already mapped or
    if memory allocation fails. */
 static bool
 install_page (void *upage, void *kpage, bool writable)
 {
   struct thread *t = thread_current ();
+  bool success = false;
 
   /* Verify that there's not already a page at that virtual
      address, then map our page there. */
-  return (pagedir_get_page (t->pagedir, upage) == NULL
+  success = (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
+
+  if (success) {
+    return ptable_set_page (upage, kpage);
+    return true;
+  } else {
+    return false;
+  }
 }

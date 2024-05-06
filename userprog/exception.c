@@ -1,10 +1,16 @@
 #include "userprog/exception.h"
 #include <inttypes.h>
+#include <stdint.h>
 #include <stdio.h>
+#include "round.h"
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "userprog/syscall.h"
+#include "vm/page_table.h"
+#include "userprog/process.h"
+#include "threads/vaddr.h"
+#include "threads/malloc.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -127,6 +133,8 @@ page_fault (struct intr_frame *f)
   bool write;        /* True: access was write, false: access was read. */
   bool user;         /* True: access by user, false: access by kernel. */
   void *fault_addr;  /* Fault address. */
+  void *upage_addr;  /* Fault page address. */
+  struct thread *cur;
 
   /* Obtain faulting address, the virtual address that was
      accessed to cause the fault.  It may point to code or to
@@ -148,6 +156,32 @@ page_fault (struct intr_frame *f)
   not_present = (f->error_code & PF_P) == 0;
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
+
+  upage_addr = (void *)((int)fault_addr & ~PGMASK);
+
+  /* data or code page faults. */
+  // printf ("Amy start!\n");
+  // printf ("Amy faul %p, %p\n", fault_addr, upage_addr);
+
+  struct ptable_entry *entry = ptable_get_page (upage_addr);
+
+  if (entry != NULL) {
+    if (entry->flags && PTABLE_CODE) {
+ 
+      cur = thread_current ();
+      list_remove (&entry->elem);
+
+      struct ptable_code *code = entry->code;
+      bool success = load_segment (cur->f, code->ofs, upage_addr, code->read_bytes,
+                                   PGSIZE - code->read_bytes, code->writable, REAL);
+      if (success) {
+        free (entry->code);
+        free (entry);
+
+        return;
+      }
+    }
+  }
 
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to

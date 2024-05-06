@@ -627,9 +627,10 @@ init_thread (struct thread *t, const char *name, int priority)
   /* init internal lists */
   t->allow_wait = true;
   t->waiting_for_lock = NULL;
-  list_init(&t->donation_list);       /* received donation list. */
-  sema_init(&t->wait_sema, 0);        /* allows othre process to 'join' this process. */
-  list_init(&t->fds);                 /* file descriptors. */
+  list_init (&t->page_table);          /* page table. */
+  list_init (&t->donation_list);       /* received donation list. */
+  sema_init (&t->wait_sema, 0);        /* allows othre process to 'join' this process. */
+  list_init (&t->fds);                 /* file descriptors. */
   t->exit_status = 0;
 
   t->magic = THREAD_MAGIC;
