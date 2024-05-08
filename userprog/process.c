@@ -19,7 +19,6 @@
 #include "threads/malloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
-#include "vm/falloc.h"
 #include "vm/page_table.h"
 
 static thread_func start_process NO_RETURN;
@@ -512,23 +511,24 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
     /* Load this page. */
     if (loading == REAL) {
       /* Get a page of memory. */
-      uint8_t *kpage = falloc_get_page ();
-      if (kpage == NULL)
+      struct ptable_entry *pt_entry = ptable_new_page (upage, PTABLE_CODE);
+
+      if (pt_entry == NULL)
         return false;
       
-      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes) {
-        falloc_free_page (kpage);
+      if (file_read (file, pt_entry->kpage, page_read_bytes) != (int) page_read_bytes) {
+        ptable_free_entry (pt_entry);
         return false; 
       }
-      memset (kpage + page_read_bytes, 0, page_zero_bytes);
+      memset (pt_entry->kpage + page_read_bytes, 0, page_zero_bytes);
 
       /* Add the page to the process's address space. */
-      if (!install_page (upage, kpage, writable)) {
-        falloc_free_page (kpage);
+      if (!install_page (upage, pt_entry->kpage, writable)) {
+        ptable_free_entry (pt_entry);
         return false; 
       }
     } else if (loading == LAZY) {
-      ptable_set_code (upage, ofs, page_read_bytes, writable);
+      ptable_new_code (upage, ofs, page_read_bytes, writable);
     }
 
     /* Advance. */
@@ -549,9 +549,12 @@ setup_stack (void **esp, struct filename_args *fn_args)
   uint8_t *kpage;
   bool success = false;
 
-  kpage = falloc_get_page ();
-  if (kpage != NULL) 
+  struct ptable_entry *pt_entry = ptable_new_page (((uint8_t *) PHYS_BASE) - PGSIZE, 0);
+  
+  if (pt_entry != NULL) 
     {
+    kpage = pt_entry->kpage;
+
     success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
     if (success) {
       *esp = PHYS_BASE;
@@ -615,7 +618,7 @@ setup_stack (void **esp, struct filename_args *fn_args)
       hex_dump((int)*esp, buf, start - (uintptr_t)*esp, true);
 #endif
     } else {
-      falloc_free_page (kpage);
+      ptable_free_entry (pt_entry);
     }
   }
 
@@ -635,17 +638,10 @@ static bool
 install_page (void *upage, void *kpage, bool writable)
 {
   struct thread *t = thread_current ();
-  bool success = false;
 
   /* Verify that there's not already a page at that virtual
      address, then map our page there. */
-  success = (pagedir_get_page (t->pagedir, upage) == NULL
+  return (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
-
-  if (success) {
-    return ptable_set_page (upage, kpage);
-    return true;
-  } else {
-    return false;
-  }
 }
+

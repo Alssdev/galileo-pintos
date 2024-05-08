@@ -13,7 +13,7 @@ struct list frame_table;                    /* Reserved physical frames. */
 struct lock frame_lock;                     /* General lock for frame table. */
 
 struct frame_entry {
-  void *kernel_addr;
+  void *kpage;
   struct thread *owner;
   struct list_elem elem;
   uint8_t flags;
@@ -28,21 +28,19 @@ void frame_table_init (void) {
 }
 
 void *falloc_get_page (void) {
-  void *pages;
+  void *kpage;
   struct thread *cur;
   struct frame_entry *entry;
 
   /* current page allocation. this allocator is for USER MEMORY ONLY. */
-  pages = palloc_get_multiple (PAL_USER | PAL_ZERO, 1);
+  kpage = palloc_get_page (PAL_USER | PAL_ZERO);
 
-  if (pages != NULL) {
+  if (kpage != NULL) {
     cur = thread_current ();
 
-    /* register that this process requires all these pages. */
     entry = malloc (sizeof *entry);
-
     if (entry != NULL) {
-      entry->kernel_addr = pages;
+      entry->kpage = kpage;
       entry->owner = cur;
 
       lock_acquire (&frame_lock);
@@ -52,14 +50,15 @@ void *falloc_get_page (void) {
       PANIC ("kernel bug - kernel out of memory.");
     }
 
-    return pages;
+    return kpage;
   } else {
     PANIC ("kernel bug - kernel out of frames.");
     NOT_REACHED ();
   }
 }
 
-void falloc_free_page (void *kernel_addr) {
+void falloc_free_page (void *kpage) {
+  struct thread *cur = thread_current ();
   struct list_elem *elem;
   struct frame_entry *entry;
   bool entry_found;
@@ -68,11 +67,11 @@ void falloc_free_page (void *kernel_addr) {
 
   entry_found = false;
 
-  for (elem = list_begin (&frame_table); elem != list_end (&frame_table); elem = list_next(elem)) {
+  for (elem = list_begin (&frame_table); elem != list_end (&frame_table); elem = list_next (elem)) {
     entry = list_entry (elem, struct frame_entry, elem);
 
-    if (entry->kernel_addr == kernel_addr) {
-      palloc_free_page (entry->kernel_addr);
+    if (entry->kpage == kpage && entry->owner == cur) {
+      palloc_free_page (entry->kpage);
       list_remove (elem);
       free (entry);
       entry_found = true;

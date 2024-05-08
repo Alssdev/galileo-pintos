@@ -285,7 +285,7 @@ bitmap_all (const struct bitmap *b, size_t start, size_t cnt)
 {
   return !bitmap_contains (b, start, cnt, false);
 }
-
+
 /* Finding set or unset bits. */
 
 /* Finds and returns the starting index of the first group of CNT

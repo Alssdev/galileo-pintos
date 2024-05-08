@@ -157,27 +157,21 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
-  upage_addr = (void *)((int)fault_addr & ~PGMASK);
+  upage_addr = (void *)((unsigned)fault_addr & ~PGMASK);
 
   /* data or code page faults. */
-  // printf ("Amy start!\n");
-  // printf ("Amy faul %p, %p\n", fault_addr, upage_addr);
-
-  struct ptable_entry *entry = ptable_get_page (upage_addr);
+  struct ptable_entry *entry = ptable_get_entry (upage_addr); 
 
   if (entry != NULL) {
-    if (entry->flags && PTABLE_CODE) {
- 
+    // TODO: make this validation a function
+    if (entry->flags & PTABLE_CODE) {
       cur = thread_current ();
-      list_remove (&entry->elem);
 
       struct ptable_code *code = entry->code;
       bool success = load_segment (cur->f, code->ofs, upage_addr, code->read_bytes,
                                    PGSIZE - code->read_bytes, code->writable, REAL);
       if (success) {
-        free (entry->code);
-        free (entry);
-
+        ptable_free_entry (entry);     /* this is the old entry. */
         return;
       }
     }
@@ -191,6 +185,7 @@ page_fault (struct intr_frame *f)
           not_present ? "not present" : "rights violation",
           write ? "writing" : "reading",
           user ? "user" : "kernel");
-  kill (f);
+  
+  exit_handler (-1);
 }
 

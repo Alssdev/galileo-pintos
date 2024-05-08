@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include "devices/input.h"
 #include "userprog/syscall-handlers.h"
+#include "vm/page_table.h"
 
 /* file system */
 int next_fd;                            /* file descriptor counter. */
@@ -21,7 +22,6 @@ struct lock filesys_lock;               /* synchronization for the file system. 
 struct fd_elem {
   struct list_elem elem;
   struct file *file;
-  struct thread *t;
   int fd;                               /* file descriptor. */
 };
 
@@ -29,7 +29,7 @@ static void syscall_handler (struct intr_frame *f);
 
 struct list_elem *fd_get_file (int fd);
 
-static bool is_valid_addr (void* addr);
+static bool is_valid_addr (void* addr, void *esp);
 static void* stack_ptr (void *esp, uint8_t offset);
 static char* stack_str (void *esp, uint8_t offset);
 static uint32_t stack_int (int *esp, uint8_t offset);
@@ -125,14 +125,10 @@ syscall_handler (struct intr_frame *f)
 
 /* Validates if addr points to a valid memory byte for the
  * current user program.*/
-bool is_valid_addr (void* addr) {
-  if (is_user_vaddr (addr)) {
-    if (pagedir_get_page (thread_current ()->pagedir, addr) != NULL) {
-      return true;
-    }
-  }
-
-  return false;
+bool is_valid_addr (void* addr, void *esp) {
+  void *upage_addr = (void *)((unsigned)addr & ~PGMASK);
+  
+  return is_user_vaddr (upage_addr) && ptable_get_entry (upage_addr) != NULL;
 }
 
 /* this function is used to read an argument from stack. Offset param
@@ -144,7 +140,7 @@ bool is_valid_addr (void* addr) {
 static uint32_t stack_int (int *esp, uint8_t offset) {
   void *addr = esp + offset;
 
-  if (is_valid_addr (addr) && is_valid_addr(addr + sizeof (int)))
+  if (is_valid_addr (addr, esp) && is_valid_addr (addr + sizeof (int), esp))
     return *(int *)addr;        /* addr is ok. */
 
   exit_handler (-1);
@@ -160,7 +156,7 @@ static uint32_t stack_int (int *esp, uint8_t offset) {
 static void *stack_ptr (void *esp, uint8_t offset) {
   void *addr = (void*)stack_int (esp, offset);
 
-  if (is_valid_addr (addr))
+  if (is_valid_addr (addr, esp))
     return addr;                                        /* addr is ok. */
 
   exit_handler (-1);
@@ -172,7 +168,7 @@ static char *stack_str (void *esp, uint8_t offset) {
   char *tmp = addr;
 
   while (*tmp != '\0') {
-    if (is_valid_addr (tmp + 1)) {
+    if (is_valid_addr (tmp + 1, esp)) {
       tmp++;
     } else {
       exit_handler (-1);
@@ -228,6 +224,7 @@ void exit_handler (uint32_t exit_status) {
   thread_current ()->exit_status = exit_status;        /* set my own exit status. */
   struct list *fds_list = &thread_current ()->fds;
 
+  /* closes all opened files. */
   struct list_elem *e;
   for (e = list_begin (fds_list); e != list_end (fds_list); e = list_next (e))
   {
@@ -235,6 +232,10 @@ void exit_handler (uint32_t exit_status) {
     e = f->elem.prev;
     close_handler (f->fd);
   }
+
+  /* free suplemental page table, but not the pages. */
+  ptable_free_table (); 
+
   thread_exit ();
   NOT_REACHED ();
 }
@@ -279,23 +280,25 @@ void open_handler (struct intr_frame *f) {
 
   filesys_acquire ();
   struct file *file = filesys_open (filename);            /* open the file. */
-  filesys_release ();
 
   if (file != NULL) {
     struct fd_elem *elem = malloc (sizeof (*elem));       /* reserve mem for file descriptor. */
+
     if (elem != NULL) {
       elem->file = file;
-      elem->fd = next_fd++;
+      elem->fd = next_fd++; 
+
       list_push_front (&cur->fds, &elem->elem);           /* register the file descriptor. */
       f->eax = elem->fd;                                  /* return the file descriptor. */
+
+      filesys_release (); 
       return;
     } else {
-      filesys_acquire ();
       file_close (file);
-      filesys_release ();
     }
   }
 
+  filesys_release ();
   f->eax = -1;                                            /* something went wrong. */
 }
 

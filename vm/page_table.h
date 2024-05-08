@@ -5,22 +5,21 @@
 #include <stdint.h>
 #include <filesys/off_t.h>
 
-typedef uint8_t flag_t;
-
 /* entry->flags & PTABLE_CODE means code should be found in this
  * page. In a page fault, kaddr works the file address.*/
-static flag_t PTABLE_CODE = 0x01;
+#define PTABLE_CODE 0x01
+
+typedef uint8_t flag_t;
 
 struct ptable_entry {
   struct list_elem elem;
-  void *vaddr;              /* page (virtual) address. */
-  void *kaddr;              /* frame (physical) address. */
+  void *upage;              /* page (virtual) address. */
+  void *kpage;              /* frame (physical) address. */
+  flag_t flags;
 
   /* if this entry is used as DATA or CODE,
    * then it contains information to recover from a page fault.*/
   struct ptable_code *code;
-
-  flag_t flags;
 };
 
 struct ptable_code {
@@ -30,8 +29,12 @@ struct ptable_code {
   bool writable;
 };
 
-struct ptable_entry *ptable_get_page (void *vaddr);
-bool ptable_set_page (void *vaddr, void *kaddr);
-bool ptable_set_code (void *vaddr, off_t ofs, uint32_t read_bytes, bool writable);
+struct ptable_entry *ptable_get_entry (void *upage);
+
+struct ptable_entry* ptable_new_page (void *upage, uint8_t flags);
+void ptable_new_code (void *upage, off_t ofs, uint32_t read_bytes, bool writable);
+
+void ptable_free_entry (struct ptable_entry *entry);
+void ptable_free_table (void);
 
 #endif // !VM_PAGE_TABLE_H
