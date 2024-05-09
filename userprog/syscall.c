@@ -29,7 +29,7 @@ static void syscall_handler (struct intr_frame *f);
 
 struct list_elem *fd_get_file (int fd);
 
-static bool is_valid_addr (void* addr, void *esp);
+static bool is_valid_addr (void* addr);
 static void* stack_ptr (void *esp, uint8_t offset);
 static char* stack_str (void *esp, uint8_t offset);
 static uint32_t stack_int (int *esp, uint8_t offset);
@@ -125,10 +125,9 @@ syscall_handler (struct intr_frame *f)
 
 /* Validates if addr points to a valid memory byte for the
  * current user program.*/
-bool is_valid_addr (void* addr, void *esp) {
+bool is_valid_addr (void* addr) {
   void *upage_addr = (void *)((unsigned)addr & ~PGMASK);
-  
-  return is_user_vaddr (upage_addr) && ptable_get_entry (upage_addr) != NULL;
+  return is_user_vaddr (upage_addr) && ptable_find_entry (upage_addr) != NULL;
 }
 
 /* this function is used to read an argument from stack. Offset param
@@ -140,7 +139,7 @@ bool is_valid_addr (void* addr, void *esp) {
 static uint32_t stack_int (int *esp, uint8_t offset) {
   void *addr = esp + offset;
 
-  if (is_valid_addr (addr, esp) && is_valid_addr (addr + sizeof (int), esp))
+  if (is_valid_addr (addr) && is_valid_addr (addr + sizeof (int)))
     return *(int *)addr;        /* addr is ok. */
 
   exit_handler (-1);
@@ -156,7 +155,7 @@ static uint32_t stack_int (int *esp, uint8_t offset) {
 static void *stack_ptr (void *esp, uint8_t offset) {
   void *addr = (void*)stack_int (esp, offset);
 
-  if (is_valid_addr (addr, esp))
+  if (is_valid_addr (addr))
     return addr;                                        /* addr is ok. */
 
   exit_handler (-1);
@@ -168,7 +167,7 @@ static char *stack_str (void *esp, uint8_t offset) {
   char *tmp = addr;
 
   while (*tmp != '\0') {
-    if (is_valid_addr (tmp + 1, esp)) {
+    if (is_valid_addr (tmp + 1)) {
       tmp++;
     } else {
       exit_handler (-1);
@@ -234,7 +233,7 @@ void exit_handler (uint32_t exit_status) {
   }
 
   /* free suplemental page table, but not the pages. */
-  ptable_free_table (); 
+  ptable_free (); 
 
   thread_exit ();
   NOT_REACHED ();

@@ -25,16 +25,29 @@ struct ptable_entry {
 struct ptable_code {
   off_t ofs;
   uint32_t read_bytes;
-  uint32_t zero_bytes;
   bool writable;
 };
 
-struct ptable_entry *ptable_get_entry (void *upage);
+/* creates a new entry in sumplemental page table. */
+struct ptable_entry* ptable_create_entry (void *upage, void *kpage, flag_t flags);
 
-struct ptable_entry* ptable_new_page (void *upage, uint8_t flags);
-void ptable_new_code (void *upage, off_t ofs, uint32_t read_bytes, bool writable);
+/* returns an entry that corresponds to upage. */
+struct ptable_entry* ptable_find_entry (void *upage);
 
-void ptable_free_entry (struct ptable_entry *entry);
-void ptable_free_table (void);
+/* deletes an existing entry in suplemental page table of
+ * current process.*/
+void ptable_delete_entry (struct ptable_entry *entry);
+
+/* free all memory related with suplemental page table
+ * of current process.*/
+void ptable_free (void);
+
+/* struct ptable_entry* ptable_new_entry (void *upage, uint8_t flags); */
+/* void ptable_new_code (void *upage, off_t ofs, uint32_t read_bytes, bool writable); */
+/* struct ptable_entry *ptable_alloc_page (struct ptable_entry *entry); */
+
+/* struct ptable_entry *ptable_get_entry (void *upage); */
+/* void ptable_free_entry (struct ptable_entry *entry); */
+/* void ptable_free_table (void); */
 
 #endif // !VM_PAGE_TABLE_H

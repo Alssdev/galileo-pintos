@@ -7,40 +7,53 @@
 #include <stdint.h>
 #include <stdio.h>
 
-void free_entry (struct ptable_entry *entry);
+/* void free_entry (struct ptable_entry *entry); */
 
-struct ptable_entry *ptable_new_page (void *upage, uint8_t flags) {
+struct ptable_entry* ptable_create_entry (void *upage, void *kpage, flag_t flags) {
+  struct thread *cur = thread_current ();
+  struct ptable_entry *entry;
+  struct ptable_code *ecode;
+
   ASSERT ((unsigned)upage % PGSIZE == 0);
+  // ASSERT (kpage == NULL || (unsigned)kpage % PGSIZE == 0);
   ASSERT (is_user_vaddr (upage));
 
-  struct thread *cur = thread_current ();
-
-  /* alloc a new frame. */
-  void *kpage = falloc_get_page ();
-  ASSERT (kpage != NULL);
-
-  /* store entry in a non-pageable memory. */
-  struct ptable_entry *entry = malloc (sizeof *entry);
+  entry = malloc (sizeof *entry);
   if (entry != NULL) {
     entry->upage = upage;
     entry->kpage = kpage;
     entry->flags = flags;
-    entry->code = NULL;
 
-    /* add to page table. */
+    if (flags & PTABLE_CODE) {
+      /* this page refers to a code segment page. */
+      ecode = malloc (sizeof *ecode);
+
+      if (ecode != NULL) {
+        entry->code = ecode;
+
+        ecode->ofs = 0;
+        ecode->writable = false;
+        ecode->read_bytes = 0;
+      } else {
+        PANIC ("ptable bug - malloc out of blocks.");
+      }
+    } else {
+      entry->code = NULL;
+    }
+
     list_push_back (&cur->page_table, &entry->elem);
     return entry;
   } else {
-    PANIC("kernel bug - malloc out of block.");
+    PANIC ("ptable bug - malloc out of blocks.");
     NOT_REACHED ();
   }
 }
 
-struct ptable_entry *ptable_get_entry (void *upage) {
-  ASSERT ((unsigned)upage % PGSIZE == 0);
-
+struct ptable_entry* ptable_find_entry (void *upage) {
   struct thread *cur = thread_current ();
   struct list_elem *elem;
+
+  ASSERT ((unsigned)upage % PGSIZE == 0);
 
   for (elem = list_begin (&cur->page_table); elem != list_end (&cur->page_table);
       elem = list_next(elem)) {
@@ -54,62 +67,23 @@ struct ptable_entry *ptable_get_entry (void *upage) {
   return NULL;
 }
 
-/* TODO: add better comments. */
-void ptable_new_code (void *upage, off_t ofs, uint32_t read_bytes, bool writable) {
-  ASSERT ((unsigned)upage % PGSIZE == 0);
-  ASSERT (is_user_vaddr (upage));
+void ptable_delete_entry (struct ptable_entry *entry) {
+  ASSERT(entry != NULL);
 
-  struct thread *cur = thread_current (); 
-
-  /* store entry in a non-pageable memory. */
-  struct ptable_entry *entry = malloc (sizeof *entry);
-
-  if (entry != NULL) {
-    struct ptable_code *code = malloc (sizeof *code);
-
-    if (code != NULL) {
-      entry->upage = upage;
-      entry->kpage = NULL;
-      entry->flags = PTABLE_CODE;
-      entry->code = code;
-
-      code->ofs = ofs;
-      code->read_bytes = read_bytes;
-      code->writable = writable;
-
-      /* add to page table. */
-      list_push_back (&cur->page_table, &entry->elem);
-      return;
-    }
-  }
-
-  PANIC("kernel bug - malloc out of blocks.");
-  NOT_REACHED ();
-}
-
-void ptable_free_entry (struct ptable_entry *entry) {
   if (entry->code != NULL)
     free (entry->code);
-
-  if (entry->kpage != NULL)
-    falloc_free_page (entry->kpage);
 
   list_remove (&entry->elem);
   free (entry);
 }
 
-void ptable_free_table (void) {
+void ptable_free (void) {
   struct thread *cur = thread_current ();
   struct ptable_entry *entry;
 
   while (!list_empty (&cur->page_table)) {
     entry = list_entry (list_begin (&cur->page_table), struct ptable_entry, elem);
-
-    if (entry->code != NULL)
-      free (entry->code);
-
-    list_remove (&entry->elem);
-    free (entry);
+    ptable_delete_entry (entry);
   }
 }
 

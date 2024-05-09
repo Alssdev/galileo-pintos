@@ -2,6 +2,8 @@
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
+#include "filesys/file.h"
 #include "round.h"
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
@@ -11,12 +13,14 @@
 #include "userprog/process.h"
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
+#include "vm/falloc.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
 
 static void kill (struct intr_frame *);
 static void page_fault (struct intr_frame *);
+void page_fault_code (struct ptable_entry *entry);
 
 /* Registers handlers for interrupts that can be caused by user
    programs.
@@ -134,7 +138,6 @@ page_fault (struct intr_frame *f)
   bool user;         /* True: access by user, false: access by kernel. */
   void *fault_addr;  /* Fault address. */
   void *upage_addr;  /* Fault page address. */
-  struct thread *cur;
 
   /* Obtain faulting address, the virtual address that was
      accessed to cause the fault.  It may point to code or to
@@ -160,32 +163,54 @@ page_fault (struct intr_frame *f)
   upage_addr = (void *)((unsigned)fault_addr & ~PGMASK);
 
   /* data or code page faults. */
-  struct ptable_entry *entry = ptable_get_entry (upage_addr); 
+  struct ptable_entry *entry = ptable_find_entry (upage_addr);
 
   if (entry != NULL) {
-    // TODO: make this validation a function
     if (entry->flags & PTABLE_CODE) {
-      cur = thread_current ();
-
-      struct ptable_code *code = entry->code;
-      bool success = load_segment (cur->f, code->ofs, upage_addr, code->read_bytes,
-                                   PGSIZE - code->read_bytes, code->writable, REAL);
-      if (success) {
-        ptable_free_entry (entry);     /* this is the old entry. */
-        return;
-      }
+      page_fault_code (entry);
     }
-  }
-
-  /* To implement virtual memory, delete the rest of the function
+  } else {
+    /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */
-  printf ("Page fault at %p: %s error %s page in %s context.\n",
-          fault_addr,
-          not_present ? "not present" : "rights violation",
-          write ? "writing" : "reading",
-          user ? "user" : "kernel");
-  
-  exit_handler (-1);
+    printf ("Page fault at %p: %s error %s page in %s context.\n",
+            fault_addr,
+            not_present ? "not present" : "rights violation",
+            write ? "writing" : "reading",
+            user ? "user" : "kernel");
+
+    exit_handler (-1);
+  }
 }
 
+void page_fault_code (struct ptable_entry *entry) {
+  ASSERT (entry != NULL);
+  ASSERT (entry->code != NULL);
+
+  struct thread *cur = thread_current ();
+  struct ptable_code *code = entry->code;
+
+  // bool success = load_segment (cur->f, code->ofs, entry->upage, code->read_bytes,
+  //                              PGSIZE - code->read_bytes, code->writable, REAL);
+  // if (success) {
+  //   ptable_delete_entry (entry);     /* this is the old entry. */
+  //   return;
+  // }
+
+  /* Get a page of memory. */
+  void *kpage = falloc_get_page ();
+  entry->kpage = kpage;
+
+  file_seek (cur->f, code->ofs);
+  if (file_read (cur->f, entry->kpage, code->read_bytes) != (int) code->read_bytes) {
+    // falloc_free_page (kpage);
+    PANIC ("page fault bug - code loading fail."); 
+  }
+  memset (kpage + code->read_bytes, 0, PGSIZE - code->read_bytes);
+
+  /* Add the page to the process's address space. */
+  if (!install_page (entry->upage, kpage, code->writable)) {
+    // falloc_free_page (kpage);
+    PANIC ("page fault bug - code loading fail."); 
+  }
+}

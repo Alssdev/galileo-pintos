@@ -20,6 +20,7 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "vm/page_table.h"
+#include "vm/falloc.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (struct filename_args *fn_args, void (**eip) (void), void **esp);
@@ -402,7 +403,7 @@ load (struct filename_args *fn_args, void (**eip) (void), void **esp)
                   zero_bytes = ROUND_UP (page_offset + phdr.p_memsz, PGSIZE);
                 }
               if (!load_segment (file, file_page, (void *) mem_page,
-                                 read_bytes, zero_bytes, writable, LAZY))
+                                 read_bytes, zero_bytes, writable))
                 goto done;
             }
           else
@@ -430,7 +431,6 @@ load (struct filename_args *fn_args, void (**eip) (void), void **esp)
 
 /* load() helpers. */
 
-static bool install_page (void *upage, void *kpage, bool writable);
 
 /* Checks whether PHDR describes a valid, loadable segment in
    FILE and returns true if so, false otherwise. */
@@ -493,7 +493,7 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
    or disk read error occurs. */
 bool
 load_segment (struct file *file, off_t ofs, uint8_t *upage,
-              uint32_t read_bytes, uint32_t zero_bytes, bool writable, enum loading loading)
+              uint32_t read_bytes, uint32_t zero_bytes, bool writable)
 {
   ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
   ASSERT (pg_ofs (upage) == 0);
@@ -509,27 +509,33 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
     size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
     /* Load this page. */
-    if (loading == REAL) {
-      /* Get a page of memory. */
-      struct ptable_entry *pt_entry = ptable_new_page (upage, PTABLE_CODE);
-
-      if (pt_entry == NULL)
-        return false;
-      
-      if (file_read (file, pt_entry->kpage, page_read_bytes) != (int) page_read_bytes) {
-        ptable_free_entry (pt_entry);
-        return false; 
-      }
-      memset (pt_entry->kpage + page_read_bytes, 0, page_zero_bytes);
-
-      /* Add the page to the process's address space. */
-      if (!install_page (upage, pt_entry->kpage, writable)) {
-        ptable_free_entry (pt_entry);
-        return false; 
-      }
-    } else if (loading == LAZY) {
-      ptable_new_code (upage, ofs, page_read_bytes, writable);
-    }
+    // if (loading == REAL) {
+    //   /* Get a page of memory. */
+    //   void *kpage = falloc_get_page ();
+    //   struct ptable_entry *pt_entry = ptable_create_entry (upage, kpage, PTABLE_CODE);
+    //
+    //   if (pt_entry == NULL)
+    //     return false;
+    //   
+    //   if (file_read (file, pt_entry->kpage, page_read_bytes) != (int) page_read_bytes) {
+    //     falloc_free_page (pt_entry);
+    //     ptable_delete_entry (pt_entry);
+    //     return false; 
+    //   }
+    //   memset (pt_entry->kpage + page_read_bytes, 0, page_zero_bytes);
+    //
+    //   /* Add the page to the process's address space. */
+    //   if (!install_page (upage, pt_entry->kpage, writable)) {
+    //     falloc_free_page (pt_entry);
+    //     ptable_delete_entry (pt_entry);
+    //     return false; 
+    //   }
+    // } else if (loading == LAZY) {
+    struct ptable_entry *pt_entry = ptable_create_entry (upage, NULL, PTABLE_CODE);
+    pt_entry->code->ofs = ofs;
+    pt_entry->code->read_bytes = page_read_bytes;
+    pt_entry->code->writable = writable;
+    // }
 
     /* Advance. */
     read_bytes -= page_read_bytes;
@@ -549,11 +555,10 @@ setup_stack (void **esp, struct filename_args *fn_args)
   uint8_t *kpage;
   bool success = false;
 
-  struct ptable_entry *pt_entry = ptable_new_page (((uint8_t *) PHYS_BASE) - PGSIZE, 0);
-  
-  if (pt_entry != NULL) 
+  kpage = falloc_get_page ();  
+  struct ptable_entry *pt_entry = ptable_create_entry (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, 0);
+  if (kpage != NULL) 
     {
-    kpage = pt_entry->kpage;
 
     success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
     if (success) {
@@ -618,7 +623,7 @@ setup_stack (void **esp, struct filename_args *fn_args)
       hex_dump((int)*esp, buf, start - (uintptr_t)*esp, true);
 #endif
     } else {
-      ptable_free_entry (pt_entry);
+      ptable_delete_entry (pt_entry);
     }
   }
 
@@ -634,7 +639,7 @@ setup_stack (void **esp, struct filename_args *fn_args)
    with palloc_get_page ().
    Returns true on success, false if UPAGE is already mapped or
    if memory allocation fails. */
-static bool
+bool
 install_page (void *upage, void *kpage, bool writable)
 {
   struct thread *t = thread_current ();
