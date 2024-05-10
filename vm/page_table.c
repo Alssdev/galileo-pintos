@@ -54,13 +54,14 @@ struct ptable_entry* ptable_find_entry (void *upage) {
   struct list_elem *elem;
 
   ASSERT ((unsigned)upage % PGSIZE == 0);
+  if (is_user_vaddr (upage)) {
+    for (elem = list_begin (&cur->page_table); elem != list_end (&cur->page_table);
+    elem = list_next(elem)) {
+      struct ptable_entry *entry = list_entry (elem, struct ptable_entry, elem);
 
-  for (elem = list_begin (&cur->page_table); elem != list_end (&cur->page_table);
-      elem = list_next(elem)) {
-    struct ptable_entry *entry = list_entry (elem, struct ptable_entry, elem);
-
-    if (entry->upage == upage) {
-      return entry;
+      if (entry->upage == upage) {
+        return entry;
+      }
     }
   }
 

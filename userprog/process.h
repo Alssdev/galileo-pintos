@@ -2,6 +2,9 @@
 #define USERPROG_PROCESS_H
 
 #define MAX_ARGS_LEN 100
+#define STACK_MAX_PAGES 2048
+#define STACK_INIT PHYS_BASE - PGSIZE
+
 #include "threads/thread.h"
 #include <filesys/off_t.h>
 

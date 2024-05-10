@@ -8,6 +8,7 @@
 /* entry->flags & PTABLE_CODE means code should be found in this
  * page. In a page fault, kaddr works the file address.*/
 #define PTABLE_CODE 0x01
+#define PTABLE_STACK 0x02
 
 typedef uint8_t flag_t;
 
