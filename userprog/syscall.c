@@ -18,6 +18,7 @@
 
 /* file system */
 int next_fd;                            /* file descriptor counter. */
+int filesys_lock_deep;
 struct lock filesys_lock;               /* synchronization for the file system. */
 struct fd_elem {
   struct list_elem elem;
@@ -36,17 +37,24 @@ static uint32_t stack_int (int *esp, uint8_t offset);
 
 
 void filesys_acquire (void) {
-  lock_acquire (&filesys_lock);
+  if (!lock_held_by_current_thread (&filesys_lock))
+    lock_acquire (&filesys_lock);
+  else
+    filesys_lock_deep++;
 }
-
+// TODO: make this part of current lock implementation
 void filesys_release (void) {
-  lock_release (&filesys_lock);
+  if (filesys_lock_deep == 0)
+    lock_release (&filesys_lock);
+  else
+    filesys_lock_deep--;
 }
 
 /* Inits all structs required for syscalls. Also enables
  * 0x30 interrupt as syscalls.*/
 void syscall_init (void) {
   /* structs MUST be initilizated before enabling syscalls. */
+  filesys_lock_deep = 0;
   lock_init (&filesys_lock);
   next_fd = 2;                          /* 0 and 1 are reserved form stdo and stdi. */
 
@@ -126,8 +134,7 @@ syscall_handler (struct intr_frame *f)
 /* Validates if addr points to a valid memory byte for the
  * current user program.*/
 bool is_valid_addr (void* addr) {
-  void *upage_addr = (void *)((unsigned)addr & ~PGMASK);
-  return is_user_vaddr (upage_addr) && ptable_find_entry (upage_addr) != NULL;
+  return ptable_find_entry (pg_round_down (addr)) != NULL;
 }
 
 /* this function is used to read an argument from stack. Offset param
@@ -178,7 +185,7 @@ static char *stack_str (void *esp, uint8_t offset) {
   return addr;
 }
 
-/* Uses the file descriptor param `fd` to searh a 
+/* Uses the file descriptor param `fd` to search a 
  * file opened by the current user program.*/
 struct list_elem *fd_get_file (int fd) {
   struct fd_elem *fd_elem;
@@ -200,7 +207,7 @@ void write_handler (struct intr_frame *f)
 {
   uint32_t fd = stack_int (f->esp, 1);
   char *buffer = stack_str (f->esp, 2);               /* mem[buffer] contains the string. */
-  unsigned size = (unsigned)stack_int (f->esp, 3);    /* bytes to be printed. */
+  unsigned size = (unsigned)stack_int (f->esp, 3);    /* bytes to be writed. */
 
   if (fd == 1) {
     putbuf (buffer, size);                /* putbuf writes to console. */
@@ -209,7 +216,7 @@ void write_handler (struct intr_frame *f)
     struct list_elem *elem = fd_get_file (fd);
     if (elem != NULL) {
       struct file *file = list_entry (elem, struct fd_elem, elem)->file;
-
+ 
       filesys_acquire ();
       f->eax = file_write (file, buffer, size);           /* write. */
       filesys_release ();
@@ -274,14 +281,19 @@ void create_handler (struct intr_frame *f) {
 }
 
 void open_handler (struct intr_frame *f) {
-  char *filename = stack_str (f->esp, 1);                 /* filename. */
-  struct thread *cur = thread_current ();
+  struct file *file;
+  struct thread *cur;
+  struct fd_elem *elem;
+  char *filename;
+
+  filename = stack_str (f->esp, 1);                 /* filename. */
+  cur = thread_current ();
 
   filesys_acquire ();
-  struct file *file = filesys_open (filename);            /* open the file. */
+  file = filesys_open (filename);            /* open the file. */
 
   if (file != NULL) {
-    struct fd_elem *elem = malloc (sizeof (*elem));       /* reserve mem for file descriptor. */
+    elem = malloc (sizeof (*elem));       /* reserve mem for file descriptor. */
 
     if (elem != NULL) {
       elem->file = file;
@@ -320,25 +332,32 @@ void read_handler (struct intr_frame *f) {
   char *buffer = stack_str (f->esp, 2);
   uint32_t size = stack_int (f->esp, 3);
 
-  if (fd == 0) {
-    /* read from keyboard. */
-    for (uint32_t i = 0; i < size; i++) {
-      buffer[i] = input_getc (); 
-    }
-    f->eax = size;
-  } else {
-    /* read from file. */
-    struct list_elem *elem = fd_get_file (fd);
-    if (elem != NULL) {
-      struct file *file = list_entry (elem, struct fd_elem, elem)->file;
+  /* verify buffer memory. */
+  struct ptable_entry *entry = ptable_find_entry (pg_round_down (buffer));
 
-      filesys_acquire ();
-      f->eax = file_read (file, buffer, size);
-      filesys_release ();
+  if (entry->writable) {
+    if (fd == 0) {
+      /* read from keyboard. */
+      for (uint32_t i = 0; i < size; i++) {
+        buffer[i] = input_getc (); 
+      }
+      f->eax = size;
     } else {
-      f->eax = -1;
-    }
-  } 
+      /* read from file. */
+      struct list_elem *elem = fd_get_file (fd);
+      if (elem != NULL) {
+        struct file *file = list_entry (elem, struct fd_elem, elem)->file;
+
+        filesys_acquire ();
+        f->eax = file_read (file, buffer, size);
+        filesys_release ();
+      } else {
+        f->eax = -1;
+      }
+    } 
+  } else {
+    exit_handler (-1);
+  }
 }
 
 void close_handler (int fd) {

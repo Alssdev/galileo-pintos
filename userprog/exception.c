@@ -140,7 +140,6 @@ page_fault (struct intr_frame *f)
   bool user;         /* True: access by user, false: access by kernel. */
   void *fault_addr;  /* Fault address. */
   void *upage_addr;  /* Fault page address. */
-  void *upage_stack;  /* stack page address. */
 
   /* Obtain faulting address, the virtual address that was
      accessed to cause the fault.  It may point to code or to
@@ -163,22 +162,34 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
-  upage_addr = (void *)((unsigned)fault_addr & ~PGMASK);
-  upage_stack = (void *)((unsigned)f->esp & ~PGMASK);
+  upage_addr = pg_round_down (fault_addr);
 
-  // printf ("esp->%p\n", upage_addr);
+  // printf ("Amy %p\n", upage_addr);
 
-  /* data or code page faults. */
+  // TODO: ugly code
   struct ptable_entry *entry = ptable_find_entry (upage_addr);
-
-  if (entry != NULL) {
+  if (entry != NULL && (entry->writable || !write)) {
+    /* userprog do expect some data in the fault address. */
     if (entry->flags & PTABLE_CODE) {
+      /* code is expected. */
       return page_fault_code (entry);
+
     } else if (entry->flags & PTABLE_STACK) {
+      /* stack is expected. */
       return page_fault_stack (entry);
     }
-  } else if ((STACK_INIT - upage_addr) >= 0 && (STACK_INIT - upage_addr)/(int)PGSIZE < STACK_MAX_PAGES && upage_addr >= upage_stack) {
-    return page_fault_stack_grow (upage_addr);
+
+  } else if (fault_addr < f->esp) {
+    /* pusha or push cause the page fault. */
+    uint32_t bytes = f->esp - fault_addr;
+    if (bytes == 4 || bytes == 32)
+      return page_fault_stack_grow (upage_addr);
+
+  } else if (upage_addr <= STACK_INIT){
+    /* possible stack grow. */
+    uint32_t required_pages = (int)(STACK_INIT - upage_addr)/(int)PGSIZE;
+    if (required_pages <= STACK_MAX_PAGES)
+      return page_fault_stack_grow (upage_addr);
   }
 
   /* To implement virtual memory, delete the rest of the function
@@ -196,65 +207,54 @@ page_fault (struct intr_frame *f)
 
 void page_fault_code (struct ptable_entry *entry) {
   ASSERT (entry != NULL);
+  ASSERT (entry->kpage == NULL);
   ASSERT (entry->code != NULL);
 
   struct thread *cur = thread_current ();
   struct ptable_code *code = entry->code;
 
-  // bool success = load_segment (cur->f, code->ofs, entry->upage, code->read_bytes,
-  //                              PGSIZE - code->read_bytes, code->writable, REAL);
-  // if (success) {
-  //   ptable_delete_entry (entry);     /* this is the old entry. */
-  //   return;
-  // }
-
   /* Get a page of memory. */
   void *kpage = falloc_get_page ();
   entry->kpage = kpage;
 
+  /* === filesystem critical section. === */
+
+  filesys_acquire ();
+
   file_seek (cur->f, code->ofs);
-  if (file_read (cur->f, entry->kpage, code->read_bytes) != (int) code->read_bytes) {
-    // falloc_free_page (kpage);
+  if (file_read (cur->f, entry->kpage, code->read_bytes) != (int) code->read_bytes)
     PANIC ("page fault bug - code loading fail."); 
-  }
+
+  filesys_release ();
+  /* ==================================== */
+
   memset (kpage + code->read_bytes, 0, PGSIZE - code->read_bytes);
 
   /* Add the page to the process's address space. */
-  if (!install_page (entry->upage, kpage, code->writable)) {
-    // falloc_free_page (kpage);
+  if (!install_page (entry->upage, kpage, entry->writable))
     PANIC ("page fault bug - code loading fail."); 
-  }
 }
 
 void page_fault_stack_grow (void *ustack) {
   void *page_i = STACK_INIT;
 
-  ASSERT (page_i);
-
-  // printf ("Stack is growing for %p\n", ustack);
-  while (page_i >= ustack) {
-    // ASSERT ((int)page_i % PGSIZE == 0);
-    ASSERT (is_user_vaddr (page_i));
-
+  while (page_i >= ustack) { 
     if (!ptable_find_entry (page_i))
       ptable_create_entry (page_i, NULL, PTABLE_STACK);
 
-    // printf ("new stack page %p\n", page_i);
     page_i -= PGSIZE;
   }
 }
 
 void page_fault_stack (struct ptable_entry *entry) {
   ASSERT (entry != NULL);
-  ASSERT (entry->upage != NULL);
+  // ASSERT (entry->upage != NULL);
   ASSERT (entry->kpage == NULL);
 
   entry->kpage = falloc_get_page ();
 
   /* Add the page to the process's address space. */
-  if (!install_page (entry->upage, entry->kpage, true)) {
-    // falloc_free_page (kpage);
+  if (!install_page (entry->upage, entry->kpage, true))
     PANIC ("page fault bug - code loading fail."); 
-  }
 }
 

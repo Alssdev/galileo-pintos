@@ -8,7 +8,6 @@
 #include <stdio.h>
 #include <string.h>
 #include "threads/loader.h"
-#include "threads/synch.h"
 #include "threads/vaddr.h"
 
 /* Page allocator.  Hands out memory in page-size (or
@@ -24,17 +23,6 @@
    By default, half of system RAM is given to the kernel pool and
    half to the user pool.  That should be huge overkill for the
    kernel pool, but that's just fine for demonstration purposes. */
-
-/* A memory pool. */
-struct pool
-  {
-    struct lock lock;                   /* Mutual exclusion. */
-    struct bitmap *used_map;            /* Bitmap of free pages. */
-    uint8_t *base;                      /* Base of pool. */
-  };
-
-/* Two pools: one for kernel data, one for user pages. */
-static struct pool kernel_pool, user_pool;
 
 static void init_pool (struct pool *, void *base, size_t page_cnt,
                        const char *name);
@@ -59,6 +47,8 @@ palloc_init (size_t user_page_limit)
   init_pool (&kernel_pool, free_start, kernel_pages, "kernel pool");
   init_pool (&user_pool, free_start + kernel_pages * PGSIZE,
              user_pages, "user pool");
+  init_pool (&used_pool, free_start + kernel_pages * PGSIZE,
+             user_pages, "user pool");
 }
 
 /* Obtains and returns a group of PAGE_CNT contiguous free pages.
@@ -81,10 +71,17 @@ palloc_get_multiple (enum palloc_flags flags, size_t page_cnt)
   page_idx = bitmap_scan_and_flip (pool->used_map, 0, page_cnt, false);
   lock_release (&pool->lock);
 
-  if (page_idx != BITMAP_ERROR)
+  if (page_idx != BITMAP_ERROR) {
     pages = pool->base + PGSIZE * page_idx;
-  else
+
+    if (flags & PAL_USER) {
+      lock_acquire (&pool->lock);
+      bitmap_set_multiple (used_pool.used_map, page_idx, page_cnt, 1);
+      lock_release (&pool->lock);
+    }
+  } else {
     pages = NULL;
+  }
 
   if (pages != NULL) 
     {

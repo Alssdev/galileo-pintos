@@ -24,6 +24,9 @@
 
 static thread_func start_process NO_RETURN;
 static bool load (struct filename_args *fn_args, void (**eip) (void), void **esp);
+bool load_segment (off_t ofs, uint8_t *upage,
+                          uint32_t read_bytes, uint32_t zero_bytes,
+                          bool writable);
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -352,6 +355,7 @@ load (struct filename_args *fn_args, void (**eip) (void), void **esp)
     goto done; 
   }
   file_deny_write (file);
+  t->f = file;
 
   /* Read program headers. */
   file_ofs = ehdr.e_phoff;
@@ -402,7 +406,7 @@ load (struct filename_args *fn_args, void (**eip) (void), void **esp)
                   read_bytes = 0;
                   zero_bytes = ROUND_UP (page_offset + phdr.p_memsz, PGSIZE);
                 }
-              if (!load_segment (file, file_page, (void *) mem_page,
+              if (!load_segment (file_page, (void *) mem_page,
                                  read_bytes, zero_bytes, writable))
                 goto done;
             }
@@ -423,7 +427,6 @@ load (struct filename_args *fn_args, void (**eip) (void), void **esp)
 
  done:
   /* We arrive here whether the load is successful or not. */
-  t->f = file;
   filesys_release ();
 
   return success;
@@ -492,50 +495,29 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
    Return true if successful, false if a memory allocation error
    or disk read error occurs. */
 bool
-load_segment (struct file *file, off_t ofs, uint8_t *upage,
+load_segment (off_t ofs, uint8_t *upage,
               uint32_t read_bytes, uint32_t zero_bytes, bool writable)
 {
+  size_t page_read_bytes;
+  size_t page_zero_bytes;
+  struct ptable_entry *pt_entry;
+
   ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
   ASSERT (pg_ofs (upage) == 0);
-  // ASSERT (ofs % PGSIZE == 0);
+  ASSERT (ofs % PGSIZE == 0);
 
-  file_seek (file, ofs);
   while (read_bytes > 0 || zero_bytes > 0) {
     /* Calculate how to fill this page.
          We will read PAGE_READ_BYTES bytes from FILE
          and zero the final PAGE_ZERO_BYTES bytes. */
 
-    size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
-    size_t page_zero_bytes = PGSIZE - page_read_bytes;
+    page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
+    page_zero_bytes = PGSIZE - page_read_bytes;
 
-    /* Load this page. */
-    // if (loading == REAL) {
-    //   /* Get a page of memory. */
-    //   void *kpage = falloc_get_page ();
-    //   struct ptable_entry *pt_entry = ptable_create_entry (upage, kpage, PTABLE_CODE);
-    //
-    //   if (pt_entry == NULL)
-    //     return false;
-    //   
-    //   if (file_read (file, pt_entry->kpage, page_read_bytes) != (int) page_read_bytes) {
-    //     falloc_free_page (pt_entry);
-    //     ptable_delete_entry (pt_entry);
-    //     return false; 
-    //   }
-    //   memset (pt_entry->kpage + page_read_bytes, 0, page_zero_bytes);
-    //
-    //   /* Add the page to the process's address space. */
-    //   if (!install_page (upage, pt_entry->kpage, writable)) {
-    //     falloc_free_page (pt_entry);
-    //     ptable_delete_entry (pt_entry);
-    //     return false; 
-    //   }
-    // } else if (loading == LAZY) {
-    struct ptable_entry *pt_entry = ptable_create_entry (upage, NULL, PTABLE_CODE);
+    pt_entry = ptable_create_entry (upage, NULL, PTABLE_CODE);
     pt_entry->code->ofs = ofs;
     pt_entry->code->read_bytes = page_read_bytes;
-    pt_entry->code->writable = writable;
-    // }
+    pt_entry->writable = writable;
 
     /* Advance. */
     read_bytes -= page_read_bytes;

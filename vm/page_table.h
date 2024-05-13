@@ -17,6 +17,7 @@ struct ptable_entry {
   void *upage;              /* page (virtual) address. */
   void *kpage;              /* frame (physical) address. */
   flag_t flags;
+  bool writable;
 
   /* if this entry is used as DATA or CODE,
    * then it contains information to recover from a page fault.*/
@@ -26,7 +27,6 @@ struct ptable_entry {
 struct ptable_code {
   off_t ofs;
   uint32_t read_bytes;
-  bool writable;
 };
 
 /* creates a new entry in sumplemental page table. */

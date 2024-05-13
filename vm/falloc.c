@@ -6,8 +6,12 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include <debug.h>
+#include <stdint.h>
 #include <stdio.h>
 #include "threads/malloc.h"
+#include "vm/swap.h"
+#include <random.h>
+#include "devices/timer.h"
 
 struct list frame_table;                    /* Reserved physical frames. */
 struct lock frame_lock;                     /* General lock for frame table. */
@@ -25,6 +29,7 @@ uint8_t DIRTY_BIT = 0x02;
 void frame_table_init (void) {
   list_init (&frame_table);
   lock_init (&frame_lock);
+  swap_init ();
 }
 
 void *falloc_get_page (void) {
@@ -48,11 +53,20 @@ void *falloc_get_page (void) {
       lock_release (&frame_lock);
     } else {
       PANIC ("kernel bug - kernel out of memory.");
+      NOT_REACHED ();
     }
 
     return kpage;
   } else {
-    PANIC ("kernel bug - kernel out of frames.");
+    lock_acquire (&frame_lock);
+    // 1. clock algorithm
+    uint32_t page_idx = 0; 
+
+    // 2. store it in swap file
+    // 3. free                        === synch === 
+    // 4. palloc must work
+    lock_release (&frame_lock);
+    PANIC ("kernel bug - user out of memory.");
     NOT_REACHED ();
   }
 }
