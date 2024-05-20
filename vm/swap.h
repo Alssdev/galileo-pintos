@@ -1,12 +1,19 @@
+#ifndef VM_SWAP_H
+#define VM_SWAP_H
+
+#include "stdbool.h"
 #include <stdint.h>
+#include <list.h>
 
 struct swap_page {
-  struct thread *owner;       /* page owner. (A userprog) */
-  void *upage;                /* user page address. */
-  uint32_t pos;               /* swap page pos. */
+  uint32_t sector;            /* swap page pos. */
+  bool is_free;
+  struct list_elem elem;
 };
 
 void swap_init (void);
 
 void swap_pop_page (struct swap_page *entry, void *kpage);
-void swap_push_page (void *kpage);
+bool swap_push_page (void *kpage);
+
+#endif // !VM_SWAP_H

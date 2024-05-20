@@ -1,7 +1,7 @@
 #ifndef THREADS_PALLOC_H
 #define THREADS_PALLOC_H
 
-#include <stddef.h>
+#include <bitmap.h>
 #include "threads/synch.h"
 
 /* How to allocate pages. */
@@ -21,7 +21,7 @@ struct pool
   };
 
 /* Two pools: one for kernel data, one for user pages. */
-struct pool kernel_pool, user_pool, used_pool;
+extern struct pool kernel_pool, user_pool;
 
 void palloc_init (size_t user_page_limit);
 void *palloc_get_page (enum palloc_flags);

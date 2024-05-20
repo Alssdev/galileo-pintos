@@ -5,6 +5,9 @@
 
 void frame_table_init (void);
 
+void falloc_mark_page (void *kpage);
+struct thread* falloc_get_owner (void *kpage);
+
 void *falloc_get_page (void);
 void falloc_free_page (void* kernel_addr);
 

@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+
 /* void free_entry (struct ptable_entry *entry); */
 struct ptable_entry* ptable_create_entry (void *upage, void *kpage, flag_t flags) {
   struct thread *cur = thread_current ();
@@ -19,6 +20,7 @@ struct ptable_entry* ptable_create_entry (void *upage, void *kpage, flag_t flags
 
   entry = malloc (sizeof *entry);
   if (entry != NULL) {
+    entry->owner = cur;
     entry->upage = upage;
     entry->kpage = kpage;
     entry->flags = flags;
@@ -49,20 +51,39 @@ struct ptable_entry* ptable_create_entry (void *upage, void *kpage, flag_t flags
   }
 }
 
-struct ptable_entry* ptable_find_entry (void *upage) {
-  struct thread *cur = thread_current ();
-  struct list_elem *elem;
-
+struct ptable_entry* ptable_find_upage (void *upage) {
   ASSERT ((unsigned)upage % PGSIZE == 0);
 
+  struct thread *t = thread_current ();
+  struct list_elem *elem;
+
   if (is_user_vaddr (upage)) {
-    for (elem = list_begin (&cur->page_table); elem != list_end (&cur->page_table);
+    for (elem = list_begin (&t->page_table); elem != list_end (&t->page_table);
     elem = list_next (elem)) {
       struct ptable_entry *entry = list_entry (elem, struct ptable_entry, elem);
 
       if (entry->upage == upage) {
+        if (entry->kpage != NULL)
+          falloc_mark_page (entry->kpage);
         return entry;
       }
+    }
+  }
+
+  return NULL;
+}
+
+struct ptable_entry* ptable_find_kpage (void *kpage, struct thread *t) {
+  struct list_elem *elem;
+
+  ASSERT ((unsigned)kpage % PGSIZE == 0);
+
+  for (elem = list_begin (&t->page_table); elem != list_end (&t->page_table);
+  elem = list_next (elem)) {
+    struct ptable_entry *entry = list_entry (elem, struct ptable_entry, elem);
+
+    if (entry->kpage == kpage) {
+      return entry;
     }
   }
 

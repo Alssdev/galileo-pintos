@@ -134,7 +134,7 @@ syscall_handler (struct intr_frame *f)
 /* Validates if addr points to a valid memory byte for the
  * current user program.*/
 bool is_valid_addr (void* addr) {
-  return ptable_find_entry (pg_round_down (addr)) != NULL;
+  return ptable_find_upage (pg_round_down (addr)) != NULL;
 }
 
 /* this function is used to read an argument from stack. Offset param
@@ -333,7 +333,7 @@ void read_handler (struct intr_frame *f) {
   uint32_t size = stack_int (f->esp, 3);
 
   /* verify buffer memory. */
-  struct ptable_entry *entry = ptable_find_entry (pg_round_down (buffer));
+  struct ptable_entry *entry = ptable_find_upage (pg_round_down (buffer));
 
   if (entry->writable) {
     if (fd == 0) {

@@ -24,6 +24,9 @@
    half to the user pool.  That should be huge overkill for the
    kernel pool, but that's just fine for demonstration purposes. */
 
+/* Two pools: one for kernel data, one for user pages. */
+struct pool kernel_pool, user_pool;
+
 static void init_pool (struct pool *, void *base, size_t page_cnt,
                        const char *name);
 static bool page_from_pool (const struct pool *, void *page);
@@ -47,8 +50,6 @@ palloc_init (size_t user_page_limit)
   init_pool (&kernel_pool, free_start, kernel_pages, "kernel pool");
   init_pool (&user_pool, free_start + kernel_pages * PGSIZE,
              user_pages, "user pool");
-  init_pool (&used_pool, free_start + kernel_pages * PGSIZE,
-             user_pages, "user pool");
 }
 
 /* Obtains and returns a group of PAGE_CNT contiguous free pages.
@@ -71,17 +72,10 @@ palloc_get_multiple (enum palloc_flags flags, size_t page_cnt)
   page_idx = bitmap_scan_and_flip (pool->used_map, 0, page_cnt, false);
   lock_release (&pool->lock);
 
-  if (page_idx != BITMAP_ERROR) {
+  if (page_idx != BITMAP_ERROR)
     pages = pool->base + PGSIZE * page_idx;
-
-    if (flags & PAL_USER) {
-      lock_acquire (&pool->lock);
-      bitmap_set_multiple (used_pool.used_map, page_idx, page_cnt, 1);
-      lock_release (&pool->lock);
-    }
-  } else {
+  else
     pages = NULL;
-  }
 
   if (pages != NULL) 
     {

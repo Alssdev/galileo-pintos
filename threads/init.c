@@ -40,6 +40,7 @@
 
 #ifdef VM
 #include "vm/falloc.h"
+#include "vm/swap.h"
 #endif
 
 /* Page directory with kernel mappings only. */
@@ -106,6 +107,7 @@ main (void)
 
   #ifdef VM
   frame_table_init (); 
+  swap_init ();
   #endif /* ifdef VM */
 
   /* Segmentation. */

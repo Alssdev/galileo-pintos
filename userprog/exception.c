@@ -164,10 +164,8 @@ page_fault (struct intr_frame *f)
 
   upage_addr = pg_round_down (fault_addr);
 
-  // printf ("Amy %p\n", upage_addr);
-
   // TODO: ugly code
-  struct ptable_entry *entry = ptable_find_entry (upage_addr);
+  struct ptable_entry *entry = ptable_find_upage (upage_addr);
   if (entry != NULL && (entry->writable || !write)) {
     /* userprog do expect some data in the fault address. */
     if (entry->flags & PTABLE_CODE) {
@@ -239,7 +237,7 @@ void page_fault_stack_grow (void *ustack) {
   void *page_i = STACK_INIT;
 
   while (page_i >= ustack) { 
-    if (!ptable_find_entry (page_i))
+    if (!ptable_find_upage (page_i))
       ptable_create_entry (page_i, NULL, PTABLE_STACK);
 
     page_i -= PGSIZE;
