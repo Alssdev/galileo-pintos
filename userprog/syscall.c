@@ -134,7 +134,7 @@ syscall_handler (struct intr_frame *f)
 /* Validates if addr points to a valid memory byte for the
  * current user program.*/
 bool is_valid_addr (void* addr) {
-  return ptable_find_upage (pg_round_down (addr)) != NULL;
+  return ptable_find_page (pg_round_down (addr)) != NULL;
 }
 
 /* this function is used to read an argument from stack. Offset param
@@ -227,20 +227,21 @@ void write_handler (struct intr_frame *f)
 }
 
 void exit_handler (uint32_t exit_status) {
-  thread_current ()->exit_status = exit_status;        /* set my own exit status. */
-  struct list *fds_list = &thread_current ()->fds;
+  struct thread *cur = thread_current();
+
+  cur->exit_status = exit_status;        /* set my own exit status. */
+  struct list *fds_list = &cur->fds;
 
   /* closes all opened files. */
   struct list_elem *e;
-  for (e = list_begin (fds_list); e != list_end (fds_list); e = list_next (e))
-  {
+  for (e = list_begin (fds_list); e != list_end (fds_list); e = list_next (e)) {
     struct fd_elem *f = list_entry (e, struct fd_elem, elem);
     e = f->elem.prev;
     close_handler (f->fd);
   }
 
-  /* free suplemental page table, but not the pages. */
-  ptable_free (); 
+  /* free the sumplementary page table. */
+  ptable_free_pages (cur); 
 
   thread_exit ();
   NOT_REACHED ();
@@ -333,9 +334,9 @@ void read_handler (struct intr_frame *f) {
   uint32_t size = stack_int (f->esp, 3);
 
   /* verify buffer memory. */
-  struct ptable_entry *entry = ptable_find_upage (pg_round_down (buffer));
+  struct page *page = ptable_find_page (pg_round_down (buffer));
 
-  if (entry->writable) {
+  if (page->writable) {
     if (fd == 0) {
       /* read from keyboard. */
       for (uint32_t i = 0; i < size; i++) {

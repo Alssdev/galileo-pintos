@@ -14,6 +14,6 @@ struct swap_page {
 void swap_init (void);
 
 void swap_pop_page (struct swap_page *entry, void *kpage);
-bool swap_push_page (void *kpage);
+struct swap_page *swap_push_page (void *kpage);
 
 #endif // !VM_SWAP_H

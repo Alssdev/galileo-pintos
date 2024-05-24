@@ -19,6 +19,7 @@
 #include "threads/malloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "vm/page.h"
 #include "vm/page_table.h"
 #include "vm/falloc.h"
 
@@ -362,7 +363,6 @@ load (struct filename_args *fn_args, void (**eip) (void), void **esp)
   for (i = 0; i < ehdr.e_phnum; i++) 
     {
       struct Elf32_Phdr phdr;
-
       if (file_ofs < 0 || file_ofs > file_length (file))
         goto done;
       file_seek (file, file_ofs);
@@ -500,7 +500,7 @@ load_segment (off_t ofs, uint8_t *upage,
 {
   size_t page_read_bytes;
   size_t page_zero_bytes;
-  struct ptable_entry *pt_entry;
+  struct page *page;
 
   ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
   ASSERT (pg_ofs (upage) == 0);
@@ -514,10 +514,9 @@ load_segment (off_t ofs, uint8_t *upage,
     page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
     page_zero_bytes = PGSIZE - page_read_bytes;
 
-    pt_entry = ptable_create_entry (upage, NULL, PTABLE_CODE);
-    pt_entry->code->ofs = ofs;
-    pt_entry->code->read_bytes = page_read_bytes;
-    pt_entry->writable = writable;
+    page = ptable_get_page (upage, writable, PTABLE_CODE);
+    page->code->ofs = ofs;
+    page->code->read_bytes = page_read_bytes;
 
     /* Advance. */
     read_bytes -= page_read_bytes;
@@ -534,15 +533,19 @@ load_segment (off_t ofs, uint8_t *upage,
 static bool
 setup_stack (void **esp, struct filename_args *fn_args)
 {
-  uint8_t *kpage;
   bool success = false;
 
-  kpage = falloc_get_page ();  
-  struct ptable_entry *pt_entry = ptable_create_entry (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, 0);
-  if (kpage != NULL) 
+  /* creates an entry in the suplementary page table. */
+  struct page *page = ptable_get_page (((uint8_t *) PHYS_BASE) - PGSIZE, true, 0);
+  if (page != NULL) 
     {
+    /* reserves memory frames. */
+    // TODO: free struct page *page here
+    falloc_get_page (page);
+    if (page->kpage == NULL)
+      return false;
 
-    success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
+    success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, page->kpage, true);
     if (success) {
       *esp = PHYS_BASE;
 
@@ -604,8 +607,6 @@ setup_stack (void **esp, struct filename_args *fn_args)
       memcpy(buf, *esp, start - (uint32_t)*esp);
       hex_dump((int)*esp, buf, start - (uintptr_t)*esp, true);
 #endif
-    } else {
-      ptable_delete_entry (pt_entry);
     }
   }
 
@@ -626,9 +627,15 @@ install_page (void *upage, void *kpage, bool writable)
 {
   struct thread *t = thread_current ();
 
+  page_lock_acquire ();
+
   /* Verify that there's not already a page at that virtual
      address, then map our page there. */
-  return (pagedir_get_page (t->pagedir, upage) == NULL
+  bool success = (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
+
+  page_lock_release ();
+
+  return success;
 }
 

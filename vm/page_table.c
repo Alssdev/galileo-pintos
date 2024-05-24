@@ -3,110 +3,95 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
-#include "vm/falloc.h"
-#include <stdint.h>
+#include "vm/page.h"
 #include <stdio.h>
 
+/* inserts a new entry in suplementary page table, but not reserves memory
+ * for the page.*/
+struct page* ptable_get_page (void *upage, bool writable, flag_t flags) {
+  ASSERT (upage != NULL && (unsigned)upage % PGSIZE == 0);
 
-/* void free_entry (struct ptable_entry *entry); */
-struct ptable_entry* ptable_create_entry (void *upage, void *kpage, flag_t flags) {
-  struct thread *cur = thread_current ();
-  struct ptable_entry *entry;
-  struct ptable_code *ecode;
+  struct page *page = malloc (sizeof *page);
+  if (page != NULL) {
+    page->owner = thread_current ();
+    page->upage = upage;
+    page->kpage = NULL;
+    page->swap = NULL;
 
-  ASSERT ((unsigned)upage % PGSIZE == 0);
-  ASSERT (kpage == NULL || (unsigned)kpage % PGSIZE == 0);
-  ASSERT (is_user_vaddr (upage));
-
-  entry = malloc (sizeof *entry);
-  if (entry != NULL) {
-    entry->owner = cur;
-    entry->upage = upage;
-    entry->kpage = kpage;
-    entry->flags = flags;
-    entry->writable = true;
-
+    page->flags = flags;
     if (flags & PTABLE_CODE) {
-      /* this page refers to a code segment page. */
-      ecode = malloc (sizeof *ecode);
-
-      if (ecode != NULL) {
-        entry->code = ecode;
-        ecode->ofs = 0;
-        ecode->read_bytes = 0;
-      } else {
-        PANIC ("ptable bug - malloc out of blocks.");
+      /* extra fields to handle page faults in code pages. */
+      page->code = malloc (sizeof *page->code);
+      if (page->code == NULL) {
+        PANIC ("kernel bug - malloc out of blocks.");
         NOT_REACHED ();
       }
-    } else {
-      entry->code = NULL;
     }
 
-    list_push_back (&cur->page_table, &entry->elem);
+    page->writable = writable;
+    page->used = true;
 
-    return entry;
+    page_lock_acquire ();
+    list_push_back (&page_list, &page->elem);
+    page_lock_release ();
+
+    return page;
   } else {
-    PANIC ("ptable bug - malloc out of blocks.");
+    PANIC ("kernel bug - malloc out of blocks.");
     NOT_REACHED ();
   }
 }
 
-struct ptable_entry* ptable_find_upage (void *upage) {
+/* finds an entry in the suplementary page table of the userprog. */
+struct page* ptable_find_page (void *upage) {
   ASSERT ((unsigned)upage % PGSIZE == 0);
 
-  struct thread *t = thread_current ();
+  struct thread *cur = thread_current ();
   struct list_elem *elem;
+  struct page *page_found = NULL;
+
+  // printf ("  [R2D2] %p\n", upage);
+
+  page_lock_acquire ();
 
   if (is_user_vaddr (upage)) {
-    for (elem = list_begin (&t->page_table); elem != list_end (&t->page_table);
+    for (elem = list_begin (&page_list); elem != list_end (&page_list);
     elem = list_next (elem)) {
-      struct ptable_entry *entry = list_entry (elem, struct ptable_entry, elem);
+      struct page *page_i = list_entry (elem, struct page, elem);
 
-      if (entry->upage == upage) {
-        if (entry->kpage != NULL)
-          falloc_mark_page (entry->kpage);
-        return entry;
+      if (page_i->owner == cur) {
+        if (page_i->upage == upage) {
+          page_found = page_i;
+
+          if (page_i->kpage != NULL)
+            page_i->used = true;
+
+          break;
+        }
       }
     }
   }
 
-  return NULL;
+  page_lock_release ();
+  return page_found;
 }
 
-struct ptable_entry* ptable_find_kpage (void *kpage, struct thread *t) {
+void ptable_free_pages (struct thread *t) {
+  ASSERT (t != NULL);
+
+  page_lock_acquire();
+
   struct list_elem *elem;
-
-  ASSERT ((unsigned)kpage % PGSIZE == 0);
-
-  for (elem = list_begin (&t->page_table); elem != list_end (&t->page_table);
+  for (elem = list_begin (&page_list); elem != list_end (&page_list);
   elem = list_next (elem)) {
-    struct ptable_entry *entry = list_entry (elem, struct ptable_entry, elem);
+    struct page *page = list_entry (elem, struct page, elem);
 
-    if (entry->kpage == kpage) {
-      return entry;
+    if (page->owner == t) {
+      list_remove (elem);
+      elem = elem->prev;
+      free (page);
     }
   }
 
-  return NULL;
+  page_lock_release();
 }
-
-void ptable_delete_entry (struct ptable_entry *entry) {
-  ASSERT(entry != NULL);
-
-  if (entry->code != NULL)
-    free (entry->code);
-
-  list_remove (&entry->elem);
-  free (entry);
-}
-
-void ptable_free (void) {
-  struct thread *cur = thread_current ();
-  struct ptable_entry *entry;
-
-  while (!list_empty (&cur->page_table)) {
-    entry = list_entry (list_begin (&cur->page_table), struct ptable_entry, elem);
-    ptable_delete_entry (entry);
-  }
-}
-

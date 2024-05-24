@@ -1,14 +1,11 @@
 #ifndef VM_FRAME_H
 #define VM_FRAME_H
 
-#include "threads/palloc.h"
+#include <list.h>
+#include "vm/page.h"
 
-void frame_table_init (void);
-
-void falloc_mark_page (void *kpage);
-struct thread* falloc_get_owner (void *kpage);
-
-void *falloc_get_page (void);
-void falloc_free_page (void* kernel_addr);
+void falloc_get_page (struct page* page);
+void falloc_free_page (struct page *page);
 
 #endif // !VM_FRAME_H
+

@@ -41,6 +41,7 @@
 #ifdef VM
 #include "vm/falloc.h"
 #include "vm/swap.h"
+#include "vm/page.h"
 #endif
 
 /* Page directory with kernel mappings only. */
@@ -106,8 +107,7 @@ main (void)
   paging_init ();
 
   #ifdef VM
-  frame_table_init (); 
-  swap_init ();
+  page_init ();
   #endif /* ifdef VM */
 
   /* Segmentation. */
