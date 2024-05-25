@@ -50,8 +50,6 @@ struct page* ptable_find_page (void *upage) {
   struct list_elem *elem;
   struct page *page_found = NULL;
 
-  // printf ("  [R2D2] %p\n", upage);
-
   page_lock_acquire ();
 
   if (is_user_vaddr (upage)) {
@@ -62,9 +60,7 @@ struct page* ptable_find_page (void *upage) {
       if (page_i->owner == cur) {
         if (page_i->upage == upage) {
           page_found = page_i;
-
-          if (page_i->kpage != NULL)
-            page_i->used = true;
+          page_i->used = page_i->kpage != NULL;
 
           break;
         }
@@ -89,6 +85,8 @@ void ptable_free_pages (struct thread *t) {
     if (page->owner == t) {
       list_remove (elem);
       elem = elem->prev;
+
+      if (page->code != NULL) free (page->code);
       free (page);
     }
   }

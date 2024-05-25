@@ -1,9 +1,9 @@
 #ifndef VM_PAGE_H
 #define VM_PAGE_H
 
-#include "devices/block.h"
 #include "vm/swap.h"
 #include <list.h>
+#include "threads/thread.h"
 
 /* entry->flags & PTABLE_CODE means code should be found in this
  * page. In a page fault, kaddr works the file address.*/

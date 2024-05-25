@@ -227,7 +227,7 @@ lock_acquire (struct lock *lock)
   ASSERT (!lock_held_by_current_thread (lock));
   ASSERT (cur->waiting_for_lock == NULL);
 
-  enum intr_level old_level = intr_disable();
+  enum intr_level old_level = intr_disable ();
 
   /* is lock available? */
   if (!lock_try_acquire (lock)) {
@@ -246,7 +246,7 @@ lock_acquire (struct lock *lock)
   /* mark thread as Not waiting */
   cur->waiting_for_lock = NULL;
 
-  intr_set_level(old_level);
+  intr_set_level (old_level);
 }
 
 void

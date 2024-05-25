@@ -1,10 +1,7 @@
 #include "vm/page.h"
 #include "threads/synch.h"
 #include "threads/interrupt.h"
-#include "vm/swap.h"
 #include "userprog/pagedir.h"
-#include "vm/falloc.h"
-#include "threads/thread.h"
 #include <stdio.h>
 
 struct list page_list;                    /* Reserved physical frames. */
@@ -17,7 +14,7 @@ struct list_elem *clock_pos;                         /* clock algorithm. */
 struct page* next_page_evict (void) {
   struct page *page;
 
-  page_lock_acquire ();
+  ASSERT (lock_held_by_current_thread (&page_lock));
 
   while (true) {
     if (clock_pos == list_end (&page_list))
@@ -31,38 +28,39 @@ struct page* next_page_evict (void) {
 
     clock_pos = list_next (clock_pos);
   }
-  page_lock_release ();
 
-
+  // clock_pos = list_next (clock_pos);
   return page;
 }
 
+// TODO: add a comment here
 void* page_evict (void) {
   page_lock_acquire ();
 
   struct page *page = next_page_evict ();
-  unsigned replaced_page = (unsigned)page->kpage;
+  void *replaced_kpage = page->kpage;
 
   if (page->writable) {
-    struct swap_page *swap_page = swap_push_page (page->kpage);
+    struct swap_page *swap_page = swap_push_page (replaced_kpage, page->owner);
     if (swap_page != NULL) {
       /* modify suplemental page table. */
       page->flags |= PTABLE_SWAP;
-
-      /* modify real page table. */
-      pagedir_clear_page (page->owner->pagedir, page->upage);
-      page->kpage = NULL;
       page->swap = swap_page;
-
-      page_lock_release ();
-
     } else {
       PANIC ("kernel bug - swap out of blocks.");
       NOT_REACHED ();
     }
+  } else {
+    // TODO: remove after tests pass
+    ASSERT (page->flags & PTABLE_CODE);
   }
 
-  return (void *)replaced_page;
+  /* modify real page table. */
+  pagedir_clear_page (page->owner->pagedir, page->upage);
+  page->kpage = NULL;
+
+  page_lock_release ();
+  return replaced_kpage;
 }
 
 /* TODO: add a comment here. */

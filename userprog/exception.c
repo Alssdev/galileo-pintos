@@ -1,10 +1,8 @@
 #include "userprog/exception.h"
-#include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include "filesys/file.h"
-#include "round.h"
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
@@ -22,9 +20,10 @@ static long long page_fault_cnt;
 
 static void kill (struct intr_frame *);
 static void page_fault (struct intr_frame *);
-void page_fault_code (struct page *entry);
-void page_fault_stack (struct page *entry);
+void page_fault_code (struct page *page);
+void page_fault_stack (struct page *page);
 void page_fault_stack_grow (void *ustack);
+void page_fault_swap (struct page *page);
 
 /* Registers handlers for interrupts that can be caused by user
    programs.
@@ -166,14 +165,14 @@ page_fault (struct intr_frame *f)
 
   upage_addr = pg_round_down (fault_addr);
 
-  // printf ("[R2D2] page fault!\n");
-
   // TODO: ugly code
   struct page *page = ptable_find_page (upage_addr);
   if (page != NULL && (page->writable || !write)) {
-    // printf ("  [R2D2] found. \n");
     /* userprog do expect some data in the fault address. */
-    if (page->flags & PTABLE_CODE) {
+    if (page->flags & PTABLE_SWAP) {
+      /* the page is in the swap file. */
+      return page_fault_swap (page);
+    } else if (page->flags & PTABLE_CODE) {
       /* code is expected. */
       return page_fault_code (page);
 
@@ -213,29 +212,21 @@ void page_fault_code (struct page *page) {
   ASSERT (page->kpage == NULL);
   ASSERT (page->code != NULL);
 
-  struct thread *cur = thread_current ();
   struct ptable_code *code = page->code;
 
-  /* reserves a memory frame. */
+  /* === filesystem critical section. === */
+  filesys_acquire ();
+
   falloc_get_page (page);
-
-  if (page->writable && page->flags & PTABLE_SWAP) {
-    // printf ("[R2D2] swap\n");
-    ASSERT (page->swap != NULL);
-    swap_pop_page (page->swap, page->kpage);
-  } else {
-    /* === filesystem critical section. === */
-    filesys_acquire ();
-
-    file_seek (cur->f, code->ofs);
-    if (file_read (cur->f, page->kpage, code->read_bytes) != (int) code->read_bytes)
-      PANIC ("page fault bug - code loading fail."); 
-
-    filesys_release ();
-    /* ==================================== */
-  }
-
+  file_seek (page->owner->f, code->ofs);
+  if (file_read (page->owner->f, page->kpage, code->read_bytes) != (int) code->read_bytes)
+    PANIC ("page fault bug - code loading fail."); 
   memset (page->kpage + code->read_bytes, 0, PGSIZE - code->read_bytes);
+
+  filesys_release ();
+  /* ==================================== */
+
+  page->used = true;
 
   /* Add the page to the process's address space. */
   if (!install_page (page->upage, page->kpage, page->writable))
@@ -261,10 +252,22 @@ void page_fault_stack (struct page *page) {
   /* reserves memory. */
   falloc_get_page (page);
 
-  if (page->flags & PTABLE_SWAP) {
-    ASSERT (page->swap != NULL);
-    swap_pop_page (page->swap, page->kpage);
-  }
+  /* Add the page to the process's address space. */
+  if (!install_page (page->upage, page->kpage, page->writable))
+    PANIC ("page fault bug - code loading fail."); 
+}
+
+void page_fault_swap (struct page *page) {
+  ASSERT (page != NULL);
+  ASSERT (page->swap != NULL);
+  ASSERT (page->kpage == NULL);
+
+  /* reserves memory. */
+  falloc_get_page (page);
+
+  swap_pop_page (page->swap, page->kpage);
+  page->swap = NULL;
+  page->flags &= ~PTABLE_SWAP;
 
   /* Add the page to the process's address space. */
   if (!install_page (page->upage, page->kpage, page->writable))

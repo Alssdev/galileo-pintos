@@ -108,6 +108,7 @@ main (void)
 
   #ifdef VM
   page_init ();
+  swap_init ();
   #endif /* ifdef VM */
 
   /* Segmentation. */

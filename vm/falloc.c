@@ -1,7 +1,6 @@
 #include "vm/falloc.h"
 #include "stddef.h"
 #include "threads/palloc.h"
-#include "threads/thread.h"
 #include <debug.h>
 #include <stdio.h>
 #include "threads/malloc.h"
@@ -14,17 +13,9 @@ void falloc_get_page (struct page* page) {
 
   /* a valid pointer if there is an available free page. */
   page->kpage = palloc_get_page (PAL_USER | PAL_ZERO);
-
   if (page->kpage == NULL) {
-    // printf ("[R2D2] swap??? \n");
     /* a valid pointer if there is an available free swap page. */
     page->kpage = page_evict ();
-
-    if (page->kpage == NULL) {
-      /* not enought memory. */
-      PANIC ("kernel bug - swap out of sectors.");
-      NOT_REACHED ();
-    }
   }
 }
 
