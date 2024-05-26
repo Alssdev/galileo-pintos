@@ -4,15 +4,15 @@
 #include "userprog/pagedir.h"
 #include <stdio.h>
 
-struct list page_list;                    /* Reserved physical frames. */
-struct lock page_lock;                     /* General lock for frame table. */
+struct list page_list;                      /* list of all used memory pages. */
+struct lock page_lock;                      /* lock for page_list. */
 static int page_lock_deep;
 
-struct list_elem *clock_pos;                         /* clock algorithm. */
+struct list_elem *clock_pos;                /* clock algorithm. */
 
 /* returns a candidate page to be evicted. */
 struct page* next_page_evict (void) {
-  struct page *page;
+  struct page *page = NULL;
 
   ASSERT (lock_held_by_current_thread (&page_lock));
 
@@ -29,7 +29,7 @@ struct page* next_page_evict (void) {
     clock_pos = list_next (clock_pos);
   }
 
-  // clock_pos = list_next (clock_pos);
+  clock_pos = list_next (clock_pos);
   return page;
 }
 
@@ -41,6 +41,9 @@ void* page_evict (void) {
   void *replaced_kpage = page->kpage;
 
   if (page->writable) {
+    ASSERT (!(page->flags & PTABLE_SWAP));
+    ASSERT (page->swap == NULL);
+
     struct swap_page *swap_page = swap_push_page (replaced_kpage, page->owner);
     if (swap_page != NULL) {
       /* modify suplemental page table. */
@@ -95,3 +98,4 @@ void page_init (void) {
   page_lock_deep = 0;
   clock_pos = list_end (&page_list);
 }
+

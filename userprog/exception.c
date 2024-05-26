@@ -212,7 +212,7 @@ void page_fault_code (struct page *page) {
   ASSERT (page->kpage == NULL);
   ASSERT (page->code != NULL);
 
-  struct ptable_code *code = page->code;
+  struct page_code *code = page->code;
 
   /* === filesystem critical section. === */
   filesys_acquire ();
@@ -249,12 +249,16 @@ void page_fault_stack (struct page *page) {
   ASSERT (page->upage != NULL);
   ASSERT (page->kpage == NULL);
 
+  page_lock_acquire ();
+
   /* reserves memory. */
   falloc_get_page (page);
 
   /* Add the page to the process's address space. */
   if (!install_page (page->upage, page->kpage, page->writable))
     PANIC ("page fault bug - code loading fail."); 
+
+  page_lock_release ();
 }
 
 void page_fault_swap (struct page *page) {
@@ -262,9 +266,12 @@ void page_fault_swap (struct page *page) {
   ASSERT (page->swap != NULL);
   ASSERT (page->kpage == NULL);
 
+  page_lock_acquire ();
+
   /* reserves memory. */
   falloc_get_page (page);
 
+  /* read from swap file. */
   swap_pop_page (page->swap, page->kpage);
   page->swap = NULL;
   page->flags &= ~PTABLE_SWAP;
@@ -272,5 +279,7 @@ void page_fault_swap (struct page *page) {
   /* Add the page to the process's address space. */
   if (!install_page (page->upage, page->kpage, page->writable))
     PANIC ("page fault bug - code loading fail."); 
+
+  page_lock_release ();
 }
 

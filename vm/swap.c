@@ -25,7 +25,7 @@ void swap_init (void) {
 
     /* initial data. */
     page->sector = i * SECTORS_PER_PAGE;
-    page->owner = NULL;
+    page->owner = NULL; 
 
     list_push_back (&swap_free, &page->elem);
   }
@@ -69,9 +69,18 @@ void swap_pop_page (struct swap_page *swap, void *kpage) {
 
   struct block *swap_block = block_get_role (BLOCK_SWAP);
 
+  /* read from file. No synchronization neeeded. */
   for (int i = 0; i < SECTORS_PER_PAGE; i++)
     block_read (swap_block, swap->sector + i, kpage + i * BLOCK_SECTOR_SIZE);
 
+  /* mark sectors as free. */
+  lock_acquire (&swap_lock);
+  swap->owner = NULL;
+  list_push_back (&swap_free, &swap->elem);
+  lock_release (&swap_lock);
+}
+
+void swap_free_page (struct swap_page *swap) {
   /* mark sectors as free. */
   lock_acquire (&swap_lock);
   swap->owner = NULL;

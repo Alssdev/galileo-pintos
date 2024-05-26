@@ -1,6 +1,7 @@
 #ifndef VM_PAGE_H
 #define VM_PAGE_H
 
+#include "filesys/off_t.h"
 #include "vm/swap.h"
 #include <list.h>
 #include "threads/thread.h"
@@ -15,6 +16,10 @@
 extern struct list page_list;
 
 typedef uint8_t flag_t;
+struct page_code {
+  off_t ofs;
+  uint32_t read_bytes;
+};
 struct page {
   struct thread *owner;
   struct list_elem elem;
@@ -28,7 +33,7 @@ struct page {
 
   /* if this entry is used as DATA or CODE,
    * then it contains information to recover from a page fault.*/
-  struct ptable_code *code;
+  struct page_code *code;
 };
 
 void page_init (void);

@@ -4,6 +4,7 @@
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
 #include "vm/page.h"
+#include "vm/swap.h"
 #include <stdio.h>
 
 /* inserts a new entry in suplementary page table, but not reserves memory
@@ -17,19 +18,20 @@ struct page* ptable_get_page (void *upage, bool writable, flag_t flags) {
     page->upage = upage;
     page->kpage = NULL;
     page->swap = NULL;
+    page->writable = writable;
+    page->used = true;
 
     page->flags = flags;
     if (flags & PTABLE_CODE) {
-      /* extra fields to handle page faults in code pages. */
-      page->code = malloc (sizeof *page->code);
+      /* extra fields needed to handle page faults in code pages. */
+      page->code = malloc (sizeof (struct page_code));
       if (page->code == NULL) {
         PANIC ("kernel bug - malloc out of blocks.");
         NOT_REACHED ();
       }
+    } else {
+      page->code = NULL;
     }
-
-    page->writable = writable;
-    page->used = true;
 
     page_lock_acquire ();
     list_push_back (&page_list, &page->elem);
@@ -50,9 +52,9 @@ struct page* ptable_find_page (void *upage) {
   struct list_elem *elem;
   struct page *page_found = NULL;
 
-  page_lock_acquire ();
-
   if (is_user_vaddr (upage)) {
+    page_lock_acquire ();
+
     for (elem = list_begin (&page_list); elem != list_end (&page_list);
     elem = list_next (elem)) {
       struct page *page_i = list_entry (elem, struct page, elem);
@@ -66,9 +68,10 @@ struct page* ptable_find_page (void *upage) {
         }
       }
     }
+
+    page_lock_release ();
   }
 
-  page_lock_release ();
   return page_found;
 }
 
@@ -87,9 +90,11 @@ void ptable_free_pages (struct thread *t) {
       elem = elem->prev;
 
       if (page->code != NULL) free (page->code);
+      if (page->swap != NULL) swap_free_page (page->swap);
       free (page);
     }
   }
 
   page_lock_release();
 }
+

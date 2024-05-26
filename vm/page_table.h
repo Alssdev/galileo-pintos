@@ -6,10 +6,6 @@
 #include "vm/page.h"
 #include "threads/thread.h"
 
-struct ptable_code {
-  off_t ofs;
-  uint32_t read_bytes;
-};
 
 struct page* ptable_get_page (void *upage, bool writable, flag_t flags);
 struct page* ptable_find_page (void *upage);
