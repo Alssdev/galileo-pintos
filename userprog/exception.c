@@ -1,16 +1,22 @@
 #include "userprog/exception.h"
 #include <inttypes.h>
 #include <stdio.h>
+#include <string.h>
+#include "filesys/file.h"
+#include "threads/vaddr.h"
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "userprog/syscall.h"
+#include "vm/page.h"
+#include "vm/ptable.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
 
 static void kill (struct intr_frame *);
 static void page_fault (struct intr_frame *);
+static void page_fault_code (struct page *page);
 
 /* Registers handlers for interrupts that can be caused by user
    programs.
@@ -149,6 +155,22 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
+  void *upage = pg_round_down (fault_addr);
+
+  /* search page in page_table. */
+  struct page *page = ptable_find_entry (upage);
+  if (page != NULL && (page->is_writable || !write)) {
+    switch (page->type) {
+      case CODE:
+        return page_fault_code (page);
+        break;
+
+      case STACK:
+        PANIC ("kernel bug - code fault detected.");
+        break;
+    }
+  }
+
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */
@@ -160,3 +182,24 @@ page_fault (struct intr_frame *f)
   kill (f);
 }
 
+static void page_fault_code (struct page *page) {
+  ASSERT (page != NULL);
+  ASSERT (page->kpage == NULL);
+
+  /* reserve memory. */
+  page_alloc (page);
+
+  /* === filesystem critical section. === */
+  filesys_acquire ();
+
+  file_seek (page->owner->f, page->ofs);
+  if (file_read (page->owner->f, page->kpage, page->read_bytes) != (int) page->read_bytes)
+    PANIC ("page fault bug - code loading fail."); 
+  memset (page->kpage + page->read_bytes, 0, PGSIZE - page->read_bytes);
+
+  filesys_release ();
+  /* ==================================== */
+
+  /* mark as pageable memory. */
+  page_complete_alloc (page);
+}

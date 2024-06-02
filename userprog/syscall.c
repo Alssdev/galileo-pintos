@@ -14,9 +14,11 @@
 #include <stdio.h>
 #include "devices/input.h"
 #include "userprog/syscall-handlers.h"
+#include "vm/ptable.h"
 
 /* file system */
 int next_fd;                            /* file descriptor counter. */
+int filesys_lock_deep;
 struct lock filesys_lock;               /* synchronization for the file system. */
 struct fd_elem {
   struct list_elem elem;
@@ -36,17 +38,24 @@ static uint32_t stack_int (int *esp, uint8_t offset);
 
 
 void filesys_acquire (void) {
-  lock_acquire (&filesys_lock);
+  if (!lock_held_by_current_thread (&filesys_lock))
+    lock_acquire (&filesys_lock);
+  else
+    filesys_lock_deep++;
 }
-
+// TODO: make this part of current lock implementation
 void filesys_release (void) {
-  lock_release (&filesys_lock);
+  if (filesys_lock_deep == 0)
+    lock_release (&filesys_lock);
+  else
+    filesys_lock_deep--;
 }
 
 /* Inits all structs required for syscalls. Also enables
  * 0x30 interrupt as syscalls.*/
 void syscall_init (void) {
   /* structs MUST be initilizated before enabling syscalls. */
+  filesys_lock_deep = 0;
   lock_init (&filesys_lock);
   next_fd = 2;                          /* 0 and 1 are reserved form stdo and stdi. */
 
@@ -126,13 +135,7 @@ syscall_handler (struct intr_frame *f)
 /* Validates if addr points to a valid memory byte for the
  * current user program.*/
 bool is_valid_addr (void* addr) {
-  if (is_user_vaddr (addr)) {
-    if (pagedir_get_page (thread_current ()->pagedir, addr) != NULL) {
-      return true;
-    }
-  }
-
-  return false;
+  return ptable_find_entry (pg_round_down (addr));
 }
 
 /* this function is used to read an argument from stack. Offset param

@@ -19,6 +19,8 @@
 #include "threads/malloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "vm/page.h"
+#include "vm/ptable.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (struct filename_args *fn_args, void (**eip) (void), void **esp);
@@ -431,7 +433,6 @@ load (struct filename_args *fn_args, void (**eip) (void), void **esp)
 
 /* load() helpers. */
 
-static bool install_page (void *upage, void *kpage, bool writable);
 
 /* Checks whether PHDR describes a valid, loadable segment in
    FILE and returns true if so, false otherwise. */
@@ -493,47 +494,36 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
    Return true if successful, false if a memory allocation error
    or disk read error occurs. */
 static bool
-load_segment (struct file *file, off_t ofs, uint8_t *upage,
+load_segment (struct file *file UNUSED, off_t ofs, uint8_t *upage,
               uint32_t read_bytes, uint32_t zero_bytes, bool writable) 
 {
+  size_t page_read_bytes;
+  size_t page_zero_bytes;
+  struct page *page;
+
   ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
 
-  file_seek (file, ofs);
-  while (read_bytes > 0 || zero_bytes > 0) 
-    {
-      /* Calculate how to fill this page.
+  while (read_bytes > 0 || zero_bytes > 0) {
+    /* Calculate how to fill this page.
          We will read PAGE_READ_BYTES bytes from FILE
          and zero the final PAGE_ZERO_BYTES bytes. */
-      size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
-      size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-      /* Get a page of memory. */
-      uint8_t *kpage = palloc_get_page (PAL_USER);
-      if (kpage == NULL)
-        return false;
+    page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
+    page_zero_bytes = PGSIZE - page_read_bytes;
 
-      /* Load this page. */
-      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
-        {
-          palloc_free_page (kpage);
-          return false; 
-        }
-      memset (kpage + page_read_bytes, 0, page_zero_bytes);
+    page = ptable_new_entry (upage, writable, CODE);
+    page->ofs = ofs;
+    page->read_bytes = page_read_bytes;
 
-      /* Add the page to the process's address space. */
-      if (!install_page (upage, kpage, writable)) 
-        {
-          palloc_free_page (kpage);
-          return false; 
-        }
+    /* Advance. */
+    read_bytes -= page_read_bytes;
+    zero_bytes -= page_zero_bytes;
+    upage += PGSIZE;
+    ofs += page_read_bytes;
+  }
 
-      /* Advance. */
-      read_bytes -= page_read_bytes;
-      zero_bytes -= page_zero_bytes;
-      upage += PGSIZE;
-    }
   return true;
 }
 
@@ -542,97 +532,63 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 static bool
 setup_stack (void **esp, struct filename_args *fn_args)
 {
-  uint8_t *kpage;
-  bool success = false;
 
-  kpage = palloc_get_page (PAL_USER | PAL_ZERO);
-  if (kpage != NULL) 
-    {
-    success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
-    if (success) {
-      *esp = PHYS_BASE;
+  /* reserve memory. */
+  struct page *page = ptable_new_entry (((uint8_t *) PHYS_BASE) - PGSIZE, true, STACK);
+  page_alloc (page);
 
-      uintptr_t arg_addrs[MAX_ARGS_LEN];
-      uint8_t arg_i = 0;                            /* utinX_t must be enought for MAX_ARG_LEN */
-      uint32_t args_len = 0;
+  *esp = PHYS_BASE;
 
-      char *token, *save_ptr;
+  uintptr_t arg_addrs[MAX_ARGS_LEN];
+  uint8_t arg_i = 0;                            /* utinX_t must be enought for MAX_ARG_LEN */
+  uint32_t args_len = 0;
 
-#ifdef DEBUG
-      uintptr_t start = (uintptr_t)*esp;
-#endif 
+  char *token, *save_ptr;
 
-      /* adding filename to the top of the stack. */
-      *esp -= strlen(fn_args->file_name) + 1;
-      memcpy(*esp, fn_args->file_name, strlen(fn_args->file_name) + 1);
-      arg_addrs[arg_i++] = (uintptr_t)*esp;
+  /* adding filename to the top of the stack. */
+  *esp -= strlen(fn_args->file_name) + 1;
+  memcpy(*esp, fn_args->file_name, strlen(fn_args->file_name) + 1);
+  arg_addrs[arg_i++] = (uintptr_t)*esp;
 
-      /* adding args to the top of the stack. */
-      for (token = strtok_r (fn_args->args, " ", &save_ptr); token != NULL;
-          token = strtok_r (NULL, " ", &save_ptr)) {
+  /* adding args to the top of the stack. */
+  for (token = strtok_r (fn_args->args, " ", &save_ptr); token != NULL;
+  token = strtok_r (NULL, " ", &save_ptr)) {
 
-        /* same as adding filename to the top of the stack. */
-        *esp -= strlen(token) + 1;
-        memcpy(*esp, token, strlen(token) + 1);
-        arg_addrs[arg_i++] = (uintptr_t)*esp;
-      }
-
-      args_len = arg_i;
-
-      /* word align */
-      *esp -= (uint32_t)*esp % 4;
-      memset(*esp, 0x0, arg_addrs[arg_i - 1] - (uintptr_t)*esp);
-
-      /* sentinel */
-      *esp -= 4;
-      memset(*esp, 0x0, 4);
-
-      for ( /* void */ ; arg_i > 0; arg_i--) {
-        *esp -= sizeof(char*);
-        memcpy(*esp, &arg_addrs[arg_i - 1], sizeof(char*));
-      }
-
-      /* add argv to the top of the stack */
-      uintptr_t argv = (uintptr_t)*esp;
-      *esp -= sizeof(char**);
-      memcpy(*esp, &argv, sizeof(char**));
-
-      /* ardd argc */
-      *esp -= sizeof(int);
-      memcpy(*esp, &args_len, sizeof(int));
-
-      /* add a NULL pointer as return adderss */
-      *esp -= sizeof(char**);
-      memset(*esp, 0, sizeof(char**));
-
-#ifdef DEBUG
-      char buf[start - (uint32_t)*esp + 1];
-      memcpy(buf, *esp, start - (uint32_t)*esp);
-      hex_dump((int)*esp, buf, start - (uintptr_t)*esp, true);
-#endif
-    } else {
-      palloc_free_page (kpage);
-    }
+    /* same as adding filename to the top of the stack. */
+    *esp -= strlen(token) + 1;
+    memcpy(*esp, token, strlen(token) + 1);
+    arg_addrs[arg_i++] = (uintptr_t)*esp;
   }
-  return success;
+
+  args_len = arg_i;
+
+  /* word align */
+  *esp -= (uint32_t)*esp % 4;
+  memset(*esp, 0x0, arg_addrs[arg_i - 1] - (uintptr_t)*esp);
+
+  /* sentinel */
+  *esp -= 4;
+  memset(*esp, 0x0, 4);
+
+  for ( /* void */ ; arg_i > 0; arg_i--) {
+    *esp -= sizeof(char*);
+    memcpy(*esp, &arg_addrs[arg_i - 1], sizeof(char*));
+  }
+
+  /* add argv to the top of the stack */
+  uintptr_t argv = (uintptr_t)*esp;
+  *esp -= sizeof(char**);
+  memcpy(*esp, &argv, sizeof(char**));
+
+  /* ardd argc */
+  *esp -= sizeof(int);
+  memcpy(*esp, &args_len, sizeof(int));
+
+  /* add a NULL pointer as return adderss */
+  *esp -= sizeof(char**);
+  memset(*esp, 0, sizeof(char**));
+
+  page_complete_alloc (page);
+  return true;
 }
 
-/* Adds a mapping from user virtual address UPAGE to kernel
-   virtual address KPAGE to the page table.
-   If WRITABLE is true, the user process may modify the page;
-   otherwise, it is read-only.
-   UPAGE must not already be mapped.
-   KPAGE should probably be a page obtained from the user pool
-   with palloc_get_page().
-   Returns true on success, false if UPAGE is already mapped or
-   if memory allocation fails. */
-static bool
-install_page (void *upage, void *kpage, bool writable)
-{
-  struct thread *t = thread_current ();
-
-  /* Verify that there's not already a page at that virtual
-     address, then map our page there. */
-  return (pagedir_get_page (t->pagedir, upage) == NULL
-          && pagedir_set_page (t->pagedir, upage, kpage, writable));
-}

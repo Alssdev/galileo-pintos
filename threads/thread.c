@@ -626,7 +626,11 @@ init_thread (struct thread *t, const char *name, int priority)
   
   /* init internal lists */
   t->waiting_for_lock = NULL;
-  list_init(&t->donation_list);
+  list_init (&t->donation_list);
+
+#ifdef VM
+  list_init (&t->page_table);
+#endif /* ifdef VM */
 
 #ifdef USERPROG
   /* this sema allows othre process to 'join' this process. */

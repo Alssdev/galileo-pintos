@@ -106,6 +106,10 @@ struct thread
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
 
+#ifdef VM
+    struct list page_table;
+#endif // VM
+
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     struct file *f;                         /* File that is being execute */
