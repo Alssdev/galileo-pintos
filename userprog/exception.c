@@ -11,12 +11,17 @@
 #include "vm/page.h"
 #include "vm/ptable.h"
 
+#define STACK_MAX_PAGES 2048
+#define STACK_INIT PHYS_BASE - PGSIZE
+
 /* Number of page faults processed. */
 static long long page_fault_cnt;
 
 static void kill (struct intr_frame *);
 static void page_fault (struct intr_frame *);
 static void page_fault_code (struct page *page);
+void page_fault_grow_stack (void *upage);
+void page_fault_stack (struct page *page);
 
 /* Registers handlers for interrupts that can be caused by user
    programs.
@@ -129,9 +134,9 @@ kill (struct intr_frame *f)
 static void
 page_fault (struct intr_frame *f) 
 {
-  bool not_present;  /* True: not-present page, false: writing r/o page. */
+  // bool not_present;  /* True: not-present page, false: writing r/o page. */
   bool write;        /* True: access was write, false: access was read. */
-  bool user;         /* True: access by user, false: access by kernel. */
+  // bool user;         /* True: access by user, false: access by kernel. */
   void *fault_addr;  /* Fault address. */
 
   /* Obtain faulting address, the virtual address that was
@@ -151,14 +156,14 @@ page_fault (struct intr_frame *f)
   page_fault_cnt++;
 
   /* Determine cause. */
-  not_present = (f->error_code & PF_P) == 0;
+  // not_present = (f->error_code & PF_P) == 0;
   write = (f->error_code & PF_W) != 0;
-  user = (f->error_code & PF_U) != 0;
+  // user = (f->error_code & PF_U) != 0;
 
-  void *upage = pg_round_down (fault_addr);
+  void *fault_upage = pg_round_down (fault_addr);
 
   /* search page in page_table. */
-  struct page *page = ptable_find_entry (upage);
+  struct page *page = ptable_find_entry (fault_upage);
   if (page != NULL && (page->is_writable || !write)) {
     switch (page->type) {
       case CODE:
@@ -166,20 +171,32 @@ page_fault (struct intr_frame *f)
         break;
 
       case STACK:
-        PANIC ("kernel bug - code fault detected.");
+        return page_fault_stack (page);
         break;
     }
+  } else if (fault_addr < f->esp) {
+    /* pusha or push cause the page fault. */
+    uint32_t bytes = f->esp - fault_addr;
+    if (bytes == 4 || bytes == 32)
+      return page_fault_grow_stack (fault_upage);
+
+  } else if (fault_upage <= STACK_INIT){
+    /* possible stack grow. */
+    uint32_t required_pages = (int)(STACK_INIT - fault_upage)/(int)PGSIZE;
+    if (required_pages <= STACK_MAX_PAGES)
+      return page_fault_grow_stack (fault_upage);
   }
 
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */
-  printf ("Page fault at %p: %s error %s page in %s context.\n",
-          fault_addr,
-          not_present ? "not present" : "rights violation",
-          write ? "writing" : "reading",
-          user ? "user" : "kernel");
-  kill (f);
+  // printf ("Page fault at %p: %s error %s page in %s context.\n",
+  //         fault_addr,
+  //         not_present ? "not present" : "rights violation",
+  //         write ? "writing" : "reading",
+  //         user ? "user" : "kernel");
+
+  exit_handler (-1);
 }
 
 static void page_fault_code (struct page *page) {
@@ -201,5 +218,26 @@ static void page_fault_code (struct page *page) {
   /* ==================================== */
 
   /* mark as pageable memory. */
+  page_complete_alloc (page);
+}
+
+void page_fault_grow_stack (void *upage) {
+  void *page_i = STACK_INIT; 
+
+  while (page_i >= upage) { 
+    if (!ptable_find_entry (page_i))
+      ptable_new_entry (page_i, true, STACK);
+
+    page_i -= PGSIZE;
+  }
+}
+
+void page_fault_stack (struct page *page) {
+  ASSERT (page != NULL);
+  ASSERT (page->upage != NULL);
+  ASSERT (page->kpage == NULL);
+
+  /* reserves memory. */
+  page_alloc (page);
   page_complete_alloc (page);
 }

@@ -22,7 +22,7 @@ void
 page_alloc (struct page *page)
 {
   ASSERT (page->kpage == NULL);
-  ASSERT (pg_ofs(page->upage) == 0);
+  ASSERT (pg_ofs (page->upage) == 0);
 
   /* try to alloc in easy way. */
   void *kpage = palloc_get_page (PAL_USER | PAL_ZERO);
