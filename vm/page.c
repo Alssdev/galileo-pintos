@@ -5,6 +5,9 @@
 #include <debug.h>
 #include "threads/thread.h"
 #include "userprog/pagedir.h"
+#include "threads/interrupt.h"
+#include "vm/swap.h"
+#include <stdio.h>
 
 /* list of virtual pages that are mapped to a memory frame. */
 struct list page_list;
@@ -51,7 +54,49 @@ page_complete_alloc (struct page *page)
 static void*
 page_evict (void)
 {
-  PANIC ("kernel bug - page evict.");
+  void *kpage;
+  struct thread *t = NULL;
+
+  /* synchronization. */
+  enum intr_level old_level = intr_disable ();
+
+  /* choose a page to evict. (FIFO) */
+  lock_acquire (&page_lock);
+  struct list_elem *elem = list_pop_front (&page_list);
+  lock_release (&page_lock);
+
+  struct page *page = list_entry (elem, struct page, allelem);
+  kpage = page->kpage;
+
+  /* avoid this thread to run. */
+  if (page->owner != thread_current ()) {
+    if (page->owner->status == THREAD_READY) {
+      page->owner->status = THREAD_BLOCKED;
+      list_remove (&page->elem);
+      t = page->owner;
+    } else if (page->owner->status == THREAD_BLOCKED) {
+      PANIC ("kernel bug - as I thought");
+    } else {
+      PANIC ("kernel bug - what?");
+    }
+  }
+
+  intr_set_level (old_level);
+
+  /* move to swap. */
+  if (page->is_writable) {
+    page->swap = swap_push_page (kpage, page->owner);
+  }
+
+  /* remove from page table. */
+  page->kpage = NULL;
+  pagedir_clear_page (page->owner->pagedir, page->upage);
+
+
+  if (t != NULL)
+    thread_unblock (t);
+
+  return kpage;
 }
 
 /* Adds a mapping from user virtual address UPAGE to kernel

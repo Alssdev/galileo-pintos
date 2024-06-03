@@ -4,6 +4,7 @@
 #include "devices/block.h"
 #include "filesys/off_t.h"
 #include "stdbool.h"
+#include "swap.h"
 #include <stdint.h>
 #include <list.h>
 
@@ -30,8 +31,7 @@ struct page {
   uint32_t read_bytes;
 
   /* swap. */
-  bool is_swap;
-  block_sector_t swap_sector;
+  struct swap_page *swap;
 };
 
 void page_init (void);

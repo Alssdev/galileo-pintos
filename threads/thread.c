@@ -157,10 +157,10 @@ awake_sleeping_thread (int64_t ticks)
 
     if (ticks >= item_thread->awake_on_ticks) {
       /* wake up thread */
-      item = list_remove(item); /* ? how does this functions works? */
-      thread_unblock(item_thread);
+      item = list_remove (item); /* ? how does this functions works? */
+      thread_unblock (item_thread);
     } else {
-      item = list_next(item);
+      item = list_next (item);
     }
   }
 }
@@ -630,6 +630,7 @@ init_thread (struct thread *t, const char *name, int priority)
 
 #ifdef VM
   list_init (&t->page_table);
+  t->swap_deep = 0;
 #endif /* ifdef VM */
 
 #ifdef USERPROG
@@ -672,7 +673,10 @@ next_thread_to_run (void)
   if (list_empty (&ready_list)) {
     return idle_thread;
   } else {
-    return list_entry (list_pop_back (&ready_list), struct thread, elem);
+    struct thread *t = list_entry (list_pop_back (&ready_list), struct thread, elem);
+#ifdef VM
+#endif
+    return t;
   }
 }
 

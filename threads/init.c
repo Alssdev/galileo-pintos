@@ -24,6 +24,7 @@
 #include "threads/thread.h"
 #ifdef VM
 #include "vm/page.h"
+#include "vm/swap.h"
 #endif /* ifdef VM */
 #ifdef USERPROG
 #include "userprog/process.h"
@@ -104,6 +105,7 @@ main (void)
   paging_init ();
 
 #ifdef VM
+  swap_init ();
   page_init ();
 #endif /* ifdef VM */
 

@@ -156,7 +156,6 @@ intr_init (void)
   intr_names[18] = "#MC Machine-Check Exception";
   intr_names[19] = "#XF SIMD Floating-Point Exception";
 }
-
 /* Registers interrupt VEC_NO to invoke HANDLER with descriptor
    privilege level DPL.  Names the interrupt NAME for debugging
    purposes.  The interrupt handler will be invoked with

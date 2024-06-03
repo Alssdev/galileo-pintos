@@ -13,6 +13,7 @@ enum thread_status
     THREAD_RUNNING,     /* Running thread. */
     THREAD_READY,       /* Not running but ready to run. */
     THREAD_BLOCKED,     /* Waiting for an event to trigger. */
+    THREAD_EVICTION,     /* Waiting for other thread to complete a page eviction.. */
     THREAD_DYING        /* About to be destroyed. */
   };
 
@@ -108,6 +109,7 @@ struct thread
 
 #ifdef VM
     struct list page_table;
+    int swap_deep;
 #endif // VM
 
 #ifdef USERPROG
@@ -141,8 +143,8 @@ extern bool thread_mlfqs;
 
 void thread_init (void);
 void thread_start (void);
-void sleep_thread(int64_t ticks_to_sleep);
-void awake_sleeping_thread(int64_t ticks);
+void sleep_thread (int64_t ticks_to_sleep);
+void awake_sleeping_thread (int64_t ticks);
 void thread_tick (void);
 void thread_print_stats (void);
 
@@ -154,7 +156,6 @@ bool thread_dead_push (struct thread *t);
 
 void thread_block (void);
 void thread_unblock (struct thread *);
-
 
 struct thread *thread_top (void);
 struct thread *thread_current (void);

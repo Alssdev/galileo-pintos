@@ -10,6 +10,7 @@
 #include "userprog/syscall.h"
 #include "vm/page.h"
 #include "vm/ptable.h"
+#include "vm/swap.h"
 
 #define STACK_MAX_PAGES 2048
 #define STACK_INIT PHYS_BASE - PGSIZE
@@ -22,6 +23,7 @@ static void page_fault (struct intr_frame *);
 static void page_fault_code (struct page *page);
 void page_fault_grow_stack (void *upage);
 void page_fault_stack (struct page *page);
+void page_fault_swap (struct page *page);
 
 /* Registers handlers for interrupts that can be caused by user
    programs.
@@ -165,27 +167,32 @@ page_fault (struct intr_frame *f)
   /* search page in page_table. */
   struct page *page = ptable_find_entry (fault_upage);
   if (page != NULL && (page->is_writable || !write)) {
-    switch (page->type) {
-      case CODE:
-        return page_fault_code (page);
-        break;
+    if (page->swap == NULL) {
+      switch (page->type) {
+        case CODE:
+          return page_fault_code (page);
+          break;
 
-      case STACK:
-        return page_fault_stack (page);
-        break;
+        case STACK:
+          return page_fault_stack (page);
+          break;
+      }
+    } else {
+      return page_fault_swap (page);
     }
   } else if (fault_addr < f->esp) {
     /* pusha or push cause the page fault. */
     uint32_t bytes = f->esp - fault_addr;
     if (bytes == 4 || bytes == 32)
-      return page_fault_grow_stack (fault_upage);
+        return page_fault_grow_stack (fault_upage);
 
-  } else if (fault_upage <= STACK_INIT){
-    /* possible stack grow. */
-    uint32_t required_pages = (int)(STACK_INIT - fault_upage)/(int)PGSIZE;
-    if (required_pages <= STACK_MAX_PAGES)
-      return page_fault_grow_stack (fault_upage);
-  }
+    } else if (fault_upage <= STACK_INIT){
+      /* possible stack grow. */
+      uint32_t required_pages = (int)(STACK_INIT - fault_upage)/(int)PGSIZE;
+      if (required_pages <= STACK_MAX_PAGES)
+        return page_fault_grow_stack (fault_upage);
+    }
+  
 
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
@@ -239,5 +246,20 @@ void page_fault_stack (struct page *page) {
 
   /* reserves memory. */
   page_alloc (page);
+  page_complete_alloc (page);
+}
+
+void page_fault_swap (struct page *page) {
+  ASSERT (pg_ofs(page->upage) == 0);
+  ASSERT (page->kpage == NULL);
+  ASSERT (page->swap != NULL);
+
+  /* reserve memory. */
+  page_alloc (page);
+ 
+  /* read from swap. */
+  swap_pop_page (page->swap, page->kpage);
+  page->swap = NULL;
+
   page_complete_alloc (page);
 }

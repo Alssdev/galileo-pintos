@@ -588,7 +588,7 @@ setup_stack (void **esp, struct filename_args *fn_args)
   *esp -= sizeof(char**);
   memset(*esp, 0, sizeof(char**));
 
-  page_complete_alloc (page);
+  page_complete_alloc (page); 
   return true;
 }
 

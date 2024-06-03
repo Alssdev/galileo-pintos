@@ -22,8 +22,7 @@ struct page *ptable_new_entry (void *upage, bool writable, enum page_type type) 
     page->ofs = 0;
     page->read_bytes = 0;
 
-    page->is_swap = false;
-    page->swap_sector = 0;
+    page->swap = NULL;
 
     list_push_front (&cur->page_table, &page->elem);
 
@@ -49,3 +48,4 @@ struct page *ptable_find_entry (void *upage) {
 
   return NULL;
 }
+
