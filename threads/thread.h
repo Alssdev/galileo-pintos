@@ -110,6 +110,7 @@ struct thread
 #ifdef VM
     struct list page_table;
     int swap_deep;
+    bool block_completed;
 #endif // VM
 
 #ifdef USERPROG

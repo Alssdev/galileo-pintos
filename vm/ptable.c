@@ -1,5 +1,6 @@
 #include "ptable.h"
 #include "list.h"
+#include "swap.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
@@ -47,5 +48,23 @@ struct page *ptable_find_entry (void *upage) {
   }
 
   return NULL;
+}
+
+
+void ptable_free_table (void) {
+  struct thread *cur = thread_current ();
+
+  for (struct list_elem *elem = list_begin (&cur->page_table); elem != list_end (&cur->page_table);
+       elem = list_next (elem)) {
+    struct page *page = list_entry (elem, struct page, elem);
+
+    /* remove from page table */
+    list_remove (elem);
+    elem = elem->prev;
+
+    /* remove from frame table and swap. */
+    page_remove (page);
+    free (page);
+  }
 }
 

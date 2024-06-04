@@ -361,6 +361,18 @@ thread_unblock (struct thread *t)
   ASSERT (is_thread (t));
 
   old_level = intr_disable ();
+
+#ifdef VM
+  if (t->status == THREAD_BLOCKED) {
+    // ready_list must be ordered
+    list_insert_ordered (&ready_list, &t->elem, &thread_less_func, NULL);
+    t->status = THREAD_READY;
+  } else if (t->status == THREAD_EVICTION) {
+    t->block_completed = true;
+  } else {
+    PANIC ("kernel bug - thread block unknown status.");
+  }
+#else
   ASSERT (t->status == THREAD_BLOCKED);
 
   // ready_list must be ordered
@@ -372,6 +384,7 @@ thread_unblock (struct thread *t)
       thread_yield ();
     }
   }
+#endif /* ifdef VM */
 
   intr_set_level (old_level);
 }
@@ -631,6 +644,7 @@ init_thread (struct thread *t, const char *name, int priority)
 #ifdef VM
   list_init (&t->page_table);
   t->swap_deep = 0;
+  t->block_completed = false;
 #endif /* ifdef VM */
 
 #ifdef USERPROG
@@ -673,10 +687,7 @@ next_thread_to_run (void)
   if (list_empty (&ready_list)) {
     return idle_thread;
   } else {
-    struct thread *t = list_entry (list_pop_back (&ready_list), struct thread, elem);
-#ifdef VM
-#endif
-    return t;
+    return list_entry (list_pop_back (&ready_list), struct thread, elem);
   }
 }
 

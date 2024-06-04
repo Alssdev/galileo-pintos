@@ -238,6 +238,9 @@ void exit_handler (uint32_t exit_status) {
     e = f->elem.prev;
     close_handler (f->fd);
   }
+
+  ptable_free_table ();
+
   thread_exit ();
   NOT_REACHED ();
 }

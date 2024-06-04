@@ -12,6 +12,7 @@
 /* list of virtual pages that are mapped to a memory frame. */
 struct list page_list;
 struct lock page_lock;
+struct lock evict_lock;
 
 static bool install_page (void *upage, void *kpage, bool writable);
 static void* page_evict (void);
@@ -19,6 +20,7 @@ static void* page_evict (void);
 void page_init (void) {
   list_init (&page_list);
   lock_init (&page_lock);
+  lock_init (&evict_lock);
 }
 
 void
@@ -54,49 +56,95 @@ page_complete_alloc (struct page *page)
 static void*
 page_evict (void)
 {
+  lock_acquire (&evict_lock);
   void *kpage;
-  struct thread *t = NULL;
+  struct thread *t;
+  enum intr_level old_level;
 
-  /* synchronization. */
-  enum intr_level old_level = intr_disable ();
+  printf ("--ev\n"); 
 
   /* choose a page to evict. (FIFO) */
   lock_acquire (&page_lock);
   struct list_elem *elem = list_pop_front (&page_list);
-  lock_release (&page_lock);
-
+  ASSERT (elem != NULL);
   struct page *page = list_entry (elem, struct page, allelem);
   kpage = page->kpage;
+  t = page->owner;
 
-  /* avoid this thread to run. */
-  if (page->owner != thread_current ()) {
-    if (page->owner->status == THREAD_READY) {
-      page->owner->status = THREAD_BLOCKED;
-      list_remove (&page->elem);
-      t = page->owner;
-    } else if (page->owner->status == THREAD_BLOCKED) {
-      PANIC ("kernel bug - as I thought");
-    } else {
-      PANIC ("kernel bug - what?");
-    }
+  /* don't allow that thread to run. */
+  old_level = intr_disable ();
+  switch (t->status) {
+    case THREAD_RUNNING:
+      t = NULL;                 /* t is the current thread. */
+      break;
+
+    case THREAD_READY:
+      t->swap_deep = 0;
+      t->status = THREAD_EVICTION;
+      list_remove (&t->elem);
+      t->block_completed = true;
+      break;
+
+    case THREAD_BLOCKED:
+      t->status = THREAD_EVICTION;
+      t->block_completed = false;
+      break;
+
+    case THREAD_EVICTION:
+      ASSERT ("what?? 1");
+      t->swap_deep++;
+      break;
+
+    case THREAD_DYING:
+      PANIC ("kernel bug - thread in eviction is dying.");
+      break;
   }
+  intr_set_level (old_level); 
+  lock_release (&page_lock);
 
-  intr_set_level (old_level);
+  printf ("  stop\n");
 
   /* move to swap. */
-  if (page->is_writable) {
+  if (page->is_writable)
     page->swap = swap_push_page (kpage, page->owner);
-  }
+
+  printf ("  sw\n");
 
   /* remove from page table. */
-  page->kpage = NULL;
   pagedir_clear_page (page->owner->pagedir, page->upage);
+  page->kpage = NULL;
 
+  if (t != NULL) {
+    old_level = intr_disable ();
 
-  if (t != NULL)
-    thread_unblock (t);
+    if (t->swap_deep == 0) {
+      t->status = THREAD_BLOCKED;
+      if (t->block_completed)
+        thread_unblock (t); 
 
+    } else {
+      ASSERT ("what?? 2");
+      t->swap_deep--;
+    }
+
+    intr_set_level (old_level);
+  }
+
+  printf ("-en\n"); 
+  lock_release (&evict_lock);
   return kpage;
+}
+
+void page_remove (struct page *page) {
+  lock_acquire (&page_lock);
+
+  if (page->kpage != NULL)
+    list_remove (&page->allelem);
+
+  if (page->swap != NULL)
+    swap_free_page (page->swap);
+    
+  lock_release (&page_lock);
 }
 
 /* Adds a mapping from user virtual address UPAGE to kernel

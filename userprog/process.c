@@ -532,10 +532,8 @@ load_segment (struct file *file UNUSED, off_t ofs, uint8_t *upage,
 static bool
 setup_stack (void **esp, struct filename_args *fn_args)
 {
-
   /* reserve memory. */
-  struct page *page = ptable_new_entry (((uint8_t *) PHYS_BASE) - PGSIZE, true, STACK);
-  page_alloc (page);
+  ptable_new_entry (((uint8_t *) PHYS_BASE) - PGSIZE, true, STACK);
 
   *esp = PHYS_BASE;
 
@@ -588,7 +586,6 @@ setup_stack (void **esp, struct filename_args *fn_args)
   *esp -= sizeof(char**);
   memset(*esp, 0, sizeof(char**));
 
-  page_complete_alloc (page); 
   return true;
 }
 

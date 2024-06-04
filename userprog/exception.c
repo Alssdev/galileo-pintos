@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "filesys/file.h"
+#include "threads/synch.h"
 #include "threads/vaddr.h"
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
@@ -254,6 +255,7 @@ void page_fault_swap (struct page *page) {
   ASSERT (page->kpage == NULL);
   ASSERT (page->swap != NULL);
 
+  lock_acquire (&evict_lock);
   /* reserve memory. */
   page_alloc (page);
  
@@ -262,4 +264,5 @@ void page_fault_swap (struct page *page) {
   page->swap = NULL;
 
   page_complete_alloc (page);
+  lock_release (&evict_lock);
 }

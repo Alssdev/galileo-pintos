@@ -8,6 +8,8 @@
 #include <stdint.h>
 #include <list.h>
 
+extern struct lock evict_lock;
+
 enum page_type {
   CODE,
   STACK
@@ -37,5 +39,6 @@ struct page {
 void page_init (void);
 void page_alloc (struct page *page);
 void page_complete_alloc (struct page *page);
+void page_remove (struct page *page);
 
 #endif // !VM_PAGE_H

@@ -391,7 +391,7 @@ cond_wait (struct condition *cond, struct lock *lock)
   waiter.top_thread =  thread_current ();
 
   // keep waiter list ordered
-  list_insert_ordered(&cond->waiters, &waiter.elem, &sema_elem_less_func, NULL);
+  list_insert_ordered (&cond->waiters, &waiter.elem, &sema_elem_less_func, NULL);
   lock_release (lock);
   sema_down (&waiter.semaphore);
   lock_acquire (lock);
