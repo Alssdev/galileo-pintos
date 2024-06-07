@@ -255,14 +255,15 @@ void page_fault_swap (struct page *page) {
   ASSERT (page->kpage == NULL);
   ASSERT (page->swap != NULL);
 
-  lock_acquire (&evict_lock);
   /* reserve memory. */
   page_alloc (page);
  
+  lock_acquire (&evict_lock);
+
   /* read from swap. */
   swap_pop_page (page->swap, page->kpage);
   page->swap = NULL;
-
   page_complete_alloc (page);
+
   lock_release (&evict_lock);
 }

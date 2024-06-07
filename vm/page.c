@@ -61,8 +61,6 @@ page_evict (void)
   struct thread *t;
   enum intr_level old_level;
 
-  printf ("--ev\n"); 
-
   /* choose a page to evict. (FIFO) */
   lock_acquire (&page_lock);
   struct list_elem *elem = list_pop_front (&page_list);
@@ -102,13 +100,9 @@ page_evict (void)
   intr_set_level (old_level); 
   lock_release (&page_lock);
 
-  printf ("  stop\n");
-
   /* move to swap. */
   if (page->is_writable)
     page->swap = swap_push_page (kpage, page->owner);
-
-  printf ("  sw\n");
 
   /* remove from page table. */
   pagedir_clear_page (page->owner->pagedir, page->upage);
@@ -130,7 +124,6 @@ page_evict (void)
     intr_set_level (old_level);
   }
 
-  printf ("-en\n"); 
   lock_release (&evict_lock);
   return kpage;
 }

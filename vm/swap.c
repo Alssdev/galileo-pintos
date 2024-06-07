@@ -38,7 +38,6 @@ struct swap_page *swap_push_page (void *kpage, struct thread *owner) {
 
   struct block *swap_block = block_get_role (BLOCK_SWAP);
 
-  printf ("  -sw\n");
   /* finding an empty space in swap file.. */
   lock_acquire (&swap_lock);
   struct list_elem *elem;
@@ -48,8 +47,6 @@ struct swap_page *swap_push_page (void *kpage, struct thread *owner) {
     PANIC ("kernel bug - swap out of blocks.");
   lock_release (&swap_lock);
 
-  printf ("    elem\n");
-
   struct swap_page *swap = list_entry (elem, struct swap_page, elem);
   // ASSERT (swap->owner == NULL);
   swap->owner = owner;
@@ -58,9 +55,6 @@ struct swap_page *swap_push_page (void *kpage, struct thread *owner) {
   for (int i = 0; i < SECTORS_PER_PAGE; i++)
     block_write (swap_block, swap->sector + i, kpage + i * BLOCK_SECTOR_SIZE);
 
-  printf ("    write\n");
-
-  printf ("  -esw\n");
   return swap;
 }
 
