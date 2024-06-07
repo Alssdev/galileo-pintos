@@ -17,17 +17,17 @@ enum page_type {
 
 struct page {
   struct thread *owner;
-  void *upage;
-  void *kpage;
+  void *upage;              /* user page. */
+  void *kpage;              /* kernel page. */
   enum page_type type;
   bool is_writable;
   struct lock evict;
 
   /* for page_list. Refer to page.h */
-  struct list_elem allelem;
+  struct list_elem allelem;             /* frame table. */
 
   /* for page table. */
-  struct list_elem elem;
+  struct list_elem elem;                /* suplementary page table. != page table micro */
 
   /* code pages only. */
   off_t ofs;
@@ -38,8 +38,8 @@ struct page {
 };
 
 void page_init (void);
-void page_alloc (struct page *page);
-void page_complete_alloc (struct page *page);
+void page_alloc (struct page *page);      /* void * palloc_get_page (); */
+void page_unblock (struct page *page);              
 void page_remove (struct page *page);
 void page_block (struct page *page);
 

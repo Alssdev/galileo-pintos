@@ -109,10 +109,11 @@ struct thread
 
 #ifdef VM
     struct list page_table;
+
+    /* unused*/
     int swap_deep;
     bool block_completed;
-#endif // VM
-
+#endif 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     struct file *f;                         /* File that is being execute */

@@ -136,7 +136,7 @@ syscall_handler (struct intr_frame *f)
 /* Validates if addr points to a valid memory byte for the
  * current user program.*/
 bool is_valid_addr (void* addr) {
-  return ptable_find_entry (pg_round_down (addr));
+  return page_find (pg_round_down (addr)) != NULL;
 }
 
 /* this function is used to read an argument from stack. Offset param
@@ -211,10 +211,6 @@ void write_handler (struct intr_frame *f)
   char *buffer = stack_str (f->esp, 2);               /* mem[buffer] contains the string. */
   unsigned size = (unsigned)stack_int (f->esp, 3);    /* bytes to be printed. */
 
-  struct page *page = ptable_find_entry (pg_round_down (buffer));
-  page_block (page);
-  ASSERT (page->kpage != NULL);
-
   if (fd == 1) {
     putbuf (buffer, size);                /* putbuf writes to console. */
     f->eax = size;
@@ -230,8 +226,6 @@ void write_handler (struct intr_frame *f)
       f->eax = -1;
     }
   }
-
-  page_complete_alloc (page);
 }
 
 void exit_handler (uint32_t exit_status) {
@@ -246,7 +240,7 @@ void exit_handler (uint32_t exit_status) {
     close_handler (f->fd);
   }
 
-  ptable_free_table ();
+  page_free_pages ();
 
   thread_exit ();
   NOT_REACHED ();

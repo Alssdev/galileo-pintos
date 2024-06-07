@@ -7,7 +7,7 @@
 #include "threads/malloc.h"
 #include <stdio.h>
 
-struct page *ptable_new_entry (void *upage, bool writable, enum page_type type) {
+struct page *page_create (void *upage, bool writable, enum page_type type) {
   ASSERT (pg_ofs (upage) == 0);
 
   struct thread *cur = thread_current ();
@@ -18,15 +18,17 @@ struct page *ptable_new_entry (void *upage, bool writable, enum page_type type) 
     page->owner = cur;
     page->upage = upage;
     page->kpage = NULL;
-    page->type = type;
+    page->type = type;              /* CODE || STACK */
     page->is_writable = writable;
     lock_init (&page->evict);
 
+    /* type == CODE */
     page->ofs = 0;
     page->read_bytes = 0;
 
     page->swap = NULL;
 
+    /* add to suplementary page table. */
     list_push_front (&cur->page_table, &page->elem);
 
     return page;
@@ -36,7 +38,7 @@ struct page *ptable_new_entry (void *upage, bool writable, enum page_type type) 
   }
 }
 
-struct page *ptable_find_entry (void *upage) {
+struct page *page_find (void *upage) {
   ASSERT (pg_ofs(upage) == 0);
 
   struct thread *cur = thread_current ();
@@ -53,7 +55,7 @@ struct page *ptable_find_entry (void *upage) {
 }
 
 
-void ptable_free_table (void) {
+void page_free_pages (void) {
   struct thread *cur = thread_current ();
 
   lock_acquire (&evict_lock);
@@ -62,11 +64,11 @@ void ptable_free_table (void) {
        elem = list_next (elem)) {
     struct page *page = list_entry (elem, struct page, elem);
 
-    /* remove from page table */
+    /* remove from suplementary page table */
     list_remove (elem);
     elem = elem->prev;
 
-    /* remove from frame table and swap. */
+    /* remove from page_list(frame table) and swap. */
     page_remove (page);
     free (page);
   }

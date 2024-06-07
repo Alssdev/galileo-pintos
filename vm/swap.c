@@ -33,7 +33,7 @@ void swap_init (void) {
 
 /* Stores PGSIZE bytes from kpage into the swap file. If the data
  * is stored returns true, false otherwise. */
-struct swap_page *swap_push_page (void *kpage, struct thread *owner) {
+struct swap_page *swap_store (void *kpage, struct thread *owner) {
   ASSERT (kpage != NULL);
   ASSERT (pg_ofs (kpage) == 0);
 
@@ -53,30 +53,25 @@ struct swap_page *swap_push_page (void *kpage, struct thread *owner) {
 
   /* copy memory data. No synchronization needed. */
   filesys_acquire ();
-  // printf ("w:%d:", swap->sector);
   for (int i = 0; i < SECTORS_PER_PAGE; i++)
     block_write (swap_block, swap->sector + i, kpage + i * BLOCK_SECTOR_SIZE);
-  // printf ("ok\n");
   filesys_release ();
 
   return swap;
 }
 
 /* reads PGSIZE bytes FROM swap_file into MEM[kpage]. */
-void swap_pop_page (struct swap_page *swap, void *kpage) {
+void swap_load (struct swap_page *swap, void *kpage) {
   ASSERT (swap != NULL);
   ASSERT (kpage != NULL);
   ASSERT (pg_ofs (kpage) == 0);
 
   struct block *swap_block = block_get_role (BLOCK_SWAP);
 
-  /* read from file. No synchronization neeeded. */
   filesys_acquire ();
-  // printf ("r:%d:", swap->sector);
   for (int i = 0; i < SECTORS_PER_PAGE; i++) {
     block_read (swap_block, swap->sector + i, kpage + i * BLOCK_SECTOR_SIZE);
   }
-  // printf ("ok\n");
   filesys_release ();
 
   /* mark sectors as free. */

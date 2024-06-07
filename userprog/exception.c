@@ -162,7 +162,7 @@ page_fault (struct intr_frame *f)
   void *fault_upage = pg_round_down (fault_addr);
 
   /* search page in page_table. */
-  struct page *page = ptable_find_entry (fault_upage);
+  struct page *page = page_find (fault_upage);
   if (page != NULL && (page->is_writable || !write)) {
     /* synchronization for eviction. */
     lock_acquire (&page->evict);
@@ -194,7 +194,7 @@ page_fault (struct intr_frame *f)
       return page_fault_grow_stack (fault_upage);
   }
 
-  printf ("Page fault at %p\n", fault_addr);
+  // printf ("Page fault at %p\n", fault_addr);
   exit_handler (-1);
 }
 
@@ -218,15 +218,15 @@ static void page_fault_code (struct page *page) {
   /* ==================================== */
 
   /* mark as pageable memory. */
-  page_complete_alloc (page);
+  page_unblock (page);
 }
 
 void page_fault_grow_stack (void *upage) {
   void *page_i = STACK_INIT; 
 
   while (page_i >= upage) { 
-    if (!ptable_find_entry (page_i))
-      ptable_new_entry (page_i, true, STACK);
+    if (!page_find (page_i))
+      page_create (page_i, true, STACK);
 
     page_i -= PGSIZE;
   }
@@ -239,7 +239,7 @@ void page_fault_stack (struct page *page) {
 
   /* reserves memory. */
   page_alloc (page);
-  page_complete_alloc (page);
+  page_unblock (page);
 }
 
 void page_fault_swap (struct page *page) {
@@ -255,10 +255,10 @@ void page_fault_swap (struct page *page) {
   // printf ("r:");
 
   /* read from swap. */
-  swap_pop_page (page->swap, page->kpage);
+  swap_load (page->swap, page->kpage);
   page->swap = NULL;
 
-  page_complete_alloc (page);
+  page_unblock (page);
 
   // printf ("ok\n");
   // lock_release (&evict_lock);

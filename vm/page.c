@@ -18,9 +18,9 @@ static bool install_page (void *upage, void *kpage, bool writable);
 static void* page_evict (void);
 
 void page_init (void) {
-  list_init (&page_list);
-  lock_init (&page_lock);
-  lock_init (&evict_lock);
+  list_init (&page_list);       /* lista de paginas que SI estan en memoria fisica. */
+  lock_init (&page_lock);       /* lock para modificar la page list. */
+  lock_init (&evict_lock);      /* lock para eviction. */
 }
 
 void
@@ -33,8 +33,13 @@ page_alloc (struct page *page)
   void *kpage = palloc_get_page (PAL_USER | PAL_ZERO);
 
   /* if not possible, then alloc in try hard mode. */
+#ifdef VM
   if (kpage == NULL)
     kpage = page_evict ();
+#else
+  if (kpage == NULL)
+    thread_exit (-1);
+#endif /* ifdef VM */
 
   /* assign frame to virtual page. */
   page->kpage = kpage;
@@ -46,7 +51,7 @@ page_alloc (struct page *page)
 }
 
 void
-page_complete_alloc (struct page *page)
+page_unblock (struct page *page)
 {
   lock_acquire (&page_lock);
   list_push_back (&page_list, &page->allelem);
@@ -57,13 +62,11 @@ static void*
 page_evict (void)
 {
   lock_acquire (&evict_lock);
-  // printf ("e:");
-  void *kpage;
 
   /* choose a page to evict. (FIFO) */
   lock_acquire (&page_lock);
   struct page *page = list_entry (list_pop_front (&page_list), struct page, allelem);
-  kpage = page->kpage;
+  void *kpage = page->kpage;
   lock_release (&page_lock);
 
   /* don't allow that thread to run. */
@@ -71,21 +74,21 @@ page_evict (void)
     PANIC ("eviction bug - bad page choosed.");
 
   enum intr_level old_level = intr_disable ();
-  /* remove from page table. */
+  /* remove from page table (micro). */
   pagedir_clear_page (page->owner->pagedir, page->upage);
   page->kpage = NULL;
   intr_set_level (old_level);
 
   /* move to swap. */
   if (page->is_writable) {
-    page->swap = swap_push_page (kpage, page->owner);
+    page->swap = swap_store (kpage, page->owner);
   } else {
     page->swap = NULL;
   }
 
   lock_release (&page->evict);
-  // printf ("ok\n");
   lock_release (&evict_lock);
+
   return kpage;
 }
 
@@ -98,7 +101,7 @@ void page_remove (struct page *page) {
 void page_block (struct page *page) {
   lock_acquire (&page_lock);
   if (page->kpage != NULL)
-    list_remove (&page->allelem);
+    list_remove (&page->allelem);       /* page_list = fram_table */
   lock_release (&page_lock);
 }
 
@@ -121,3 +124,4 @@ install_page (void *upage, void *kpage, bool writable)
   return (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
 }
+

@@ -513,7 +513,7 @@ load_segment (struct file *file UNUSED, off_t ofs, uint8_t *upage,
     page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
     page_zero_bytes = PGSIZE - page_read_bytes;
 
-    page = ptable_new_entry (upage, writable, CODE);
+    page = page_create (upage, writable, CODE);
     page->ofs = ofs;
     page->read_bytes = page_read_bytes;
 
@@ -533,7 +533,7 @@ static bool
 setup_stack (void **esp, struct filename_args *fn_args)
 {
   /* reserve memory. */
-  ptable_new_entry (((uint8_t *) PHYS_BASE) - PGSIZE, true, STACK);
+  page_create (((uint8_t *) PHYS_BASE) - PGSIZE, true, STACK);
 
   *esp = PHYS_BASE;
 
@@ -544,8 +544,8 @@ setup_stack (void **esp, struct filename_args *fn_args)
   char *token, *save_ptr;
 
   /* adding filename to the top of the stack. */
-  *esp -= strlen(fn_args->file_name) + 1;
-  memcpy(*esp, fn_args->file_name, strlen(fn_args->file_name) + 1);
+  *esp -= strlen (fn_args->file_name) + 1;
+  memcpy (*esp, fn_args->file_name, strlen (fn_args->file_name) + 1);
   arg_addrs[arg_i++] = (uintptr_t)*esp;
 
   /* adding args to the top of the stack. */
@@ -553,8 +553,8 @@ setup_stack (void **esp, struct filename_args *fn_args)
   token = strtok_r (NULL, " ", &save_ptr)) {
 
     /* same as adding filename to the top of the stack. */
-    *esp -= strlen(token) + 1;
-    memcpy(*esp, token, strlen(token) + 1);
+    *esp -= strlen (token) + 1;
+    memcpy (*esp, token, strlen (token) + 1);
     arg_addrs[arg_i++] = (uintptr_t)*esp;
   }
 
@@ -562,29 +562,29 @@ setup_stack (void **esp, struct filename_args *fn_args)
 
   /* word align */
   *esp -= (uint32_t)*esp % 4;
-  memset(*esp, 0x0, arg_addrs[arg_i - 1] - (uintptr_t)*esp);
+  memset (*esp, 0x0, arg_addrs[arg_i - 1] - (uintptr_t)*esp);
 
   /* sentinel */
   *esp -= 4;
-  memset(*esp, 0x0, 4);
+  memset (*esp, 0x0, 4);
 
   for ( /* void */ ; arg_i > 0; arg_i--) {
     *esp -= sizeof(char*);
-    memcpy(*esp, &arg_addrs[arg_i - 1], sizeof(char*));
+    memcpy (*esp, &arg_addrs[arg_i - 1], sizeof(char*));
   }
 
   /* add argv to the top of the stack */
   uintptr_t argv = (uintptr_t)*esp;
-  *esp -= sizeof(char**);
-  memcpy(*esp, &argv, sizeof(char**));
+  *esp -= sizeof (char**);
+  memcpy (*esp, &argv, sizeof(char**));
 
   /* ardd argc */
   *esp -= sizeof(int);
-  memcpy(*esp, &args_len, sizeof(int));
+  memcpy (*esp, &args_len, sizeof (int));
 
   /* add a NULL pointer as return adderss */
-  *esp -= sizeof(char**);
-  memset(*esp, 0, sizeof(char**));
+  *esp -= sizeof (char**);
+  memset (*esp, 0, sizeof (char**));
 
   return true;
 }
