@@ -137,9 +137,7 @@ kill (struct intr_frame *f)
 static void
 page_fault (struct intr_frame *f) 
 {
-  // bool not_present;  /* True: not-present page, false: writing r/o page. */
   bool write;        /* True: access was write, false: access was read. */
-  // bool user;         /* True: access by user, false: access by kernel. */
   void *fault_addr;  /* Fault address. */
 
   /* Obtain faulting address, the virtual address that was
@@ -159,9 +157,7 @@ page_fault (struct intr_frame *f)
   page_fault_cnt++;
 
   /* Determine cause. */
-  // not_present = (f->error_code & PF_P) == 0;
   write = (f->error_code & PF_W) != 0;
-  // user = (f->error_code & PF_U) != 0;
 
   void *fault_upage = pg_round_down (fault_addr);
 
@@ -189,25 +185,16 @@ page_fault (struct intr_frame *f)
     /* pusha or push cause the page fault. */
     uint32_t bytes = f->esp - fault_addr;
     if (bytes == 4 || bytes == 32)
-        return page_fault_grow_stack (fault_upage);
+      return page_fault_grow_stack (fault_upage);
 
-    } else if (fault_upage <= STACK_INIT){
-      /* possible stack grow. */
-      uint32_t required_pages = (int)(STACK_INIT - fault_upage)/(int)PGSIZE;
-      if (required_pages <= STACK_MAX_PAGES)
-        return page_fault_grow_stack (fault_upage);
-    }
-  
+  } else if (fault_upage <= STACK_INIT){
+    /* possible stack grow. */
+    uint32_t required_pages = (int)(STACK_INIT - fault_upage)/(int)PGSIZE;
+    if (required_pages <= STACK_MAX_PAGES)
+      return page_fault_grow_stack (fault_upage);
+  }
 
-  /* To implement virtual memory, delete the rest of the function
-     body, and replace it with code that brings in the page to
-     which fault_addr refers. */
-  // printf ("Page fault at %p: %s error %s page in %s context.\n",
-  //         fault_addr,
-  //         not_present ? "not present" : "rights violation",
-  //         write ? "writing" : "reading",
-  //         user ? "user" : "kernel");
-
+  printf ("Page fault at %p\n", fault_addr);
   exit_handler (-1);
 }
 
@@ -216,6 +203,7 @@ static void page_fault_code (struct page *page) {
   ASSERT (page->kpage == NULL);
 
   /* reserve memory. */
+  // page_block (page);
   page_alloc (page);
 
   /* === filesystem critical section. === */
@@ -260,14 +248,18 @@ void page_fault_swap (struct page *page) {
   ASSERT (page->swap != NULL);
 
   /* reserve memory. */
+  // page_block (page);
   page_alloc (page);
  
-  lock_acquire (&evict_lock);
+  // lock_acquire (&evict_lock);
+  // printf ("r:");
 
   /* read from swap. */
   swap_pop_page (page->swap, page->kpage);
   page->swap = NULL;
+
   page_complete_alloc (page);
 
-  lock_release (&evict_lock);
+  // printf ("ok\n");
+  // lock_release (&evict_lock);
 }

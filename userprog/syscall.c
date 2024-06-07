@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include "devices/input.h"
 #include "userprog/syscall-handlers.h"
+#include "vm/page.h"
 #include "vm/ptable.h"
 
 /* file system */
@@ -210,6 +211,10 @@ void write_handler (struct intr_frame *f)
   char *buffer = stack_str (f->esp, 2);               /* mem[buffer] contains the string. */
   unsigned size = (unsigned)stack_int (f->esp, 3);    /* bytes to be printed. */
 
+  struct page *page = ptable_find_entry (pg_round_down (buffer));
+  page_block (page);
+  ASSERT (page->kpage != NULL);
+
   if (fd == 1) {
     putbuf (buffer, size);                /* putbuf writes to console. */
     f->eax = size;
@@ -225,6 +230,8 @@ void write_handler (struct intr_frame *f)
       f->eax = -1;
     }
   }
+
+  page_complete_alloc (page);
 }
 
 void exit_handler (uint32_t exit_status) {

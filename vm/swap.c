@@ -53,8 +53,10 @@ struct swap_page *swap_push_page (void *kpage, struct thread *owner) {
 
   /* copy memory data. No synchronization needed. */
   filesys_acquire ();
+  // printf ("w:%d:", swap->sector);
   for (int i = 0; i < SECTORS_PER_PAGE; i++)
     block_write (swap_block, swap->sector + i, kpage + i * BLOCK_SECTOR_SIZE);
+  // printf ("ok\n");
   filesys_release ();
 
   return swap;
@@ -70,8 +72,11 @@ void swap_pop_page (struct swap_page *swap, void *kpage) {
 
   /* read from file. No synchronization neeeded. */
   filesys_acquire ();
-  for (int i = 0; i < SECTORS_PER_PAGE; i++)
+  // printf ("r:%d:", swap->sector);
+  for (int i = 0; i < SECTORS_PER_PAGE; i++) {
     block_read (swap_block, swap->sector + i, kpage + i * BLOCK_SECTOR_SIZE);
+  }
+  // printf ("ok\n");
   filesys_release ();
 
   /* mark sectors as free. */

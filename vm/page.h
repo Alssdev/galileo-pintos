@@ -41,5 +41,6 @@ void page_init (void);
 void page_alloc (struct page *page);
 void page_complete_alloc (struct page *page);
 void page_remove (struct page *page);
+void page_block (struct page *page);
 
 #endif // !VM_PAGE_H

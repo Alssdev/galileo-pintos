@@ -57,46 +57,48 @@ static void*
 page_evict (void)
 {
   lock_acquire (&evict_lock);
+  // printf ("e:");
   void *kpage;
-  enum intr_level old_level;
 
   /* choose a page to evict. (FIFO) */
   lock_acquire (&page_lock);
   struct page *page = list_entry (list_pop_front (&page_list), struct page, allelem);
   kpage = page->kpage;
+  lock_release (&page_lock);
 
   /* don't allow that thread to run. */
-  old_level = intr_disable ();
-
-  if (!lock_try_acquire (&page->evict)) {
+  if (!lock_try_acquire (&page->evict))
     PANIC ("eviction bug - bad page choosed.");
-  }
 
+  enum intr_level old_level = intr_disable ();
   /* remove from page table. */
   pagedir_clear_page (page->owner->pagedir, page->upage);
   page->kpage = NULL;
-
-  intr_set_level (old_level); 
-  lock_release (&page_lock);
+  intr_set_level (old_level);
 
   /* move to swap. */
-  if (page->is_writable)
+  if (page->is_writable) {
     page->swap = swap_push_page (kpage, page->owner);
+  } else {
+    page->swap = NULL;
+  }
 
   lock_release (&page->evict);
+  // printf ("ok\n");
   lock_release (&evict_lock);
   return kpage;
 }
 
 void page_remove (struct page *page) {
-  lock_acquire (&page_lock);
-
-  if (page->kpage != NULL)
-    list_remove (&page->allelem);
-
+  page_block (page);
   if (page->swap != NULL)
     swap_free_page (page->swap);
-    
+}
+
+void page_block (struct page *page) {
+  lock_acquire (&page_lock);
+  if (page->kpage != NULL)
+    list_remove (&page->allelem);
   lock_release (&page_lock);
 }
 
