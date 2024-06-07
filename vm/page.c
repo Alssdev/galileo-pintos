@@ -58,45 +58,24 @@ page_evict (void)
 {
   lock_acquire (&evict_lock);
   void *kpage;
-  struct thread *t;
   enum intr_level old_level;
 
   /* choose a page to evict. (FIFO) */
   lock_acquire (&page_lock);
-  struct list_elem *elem = list_pop_front (&page_list);
-  ASSERT (elem != NULL);
-  struct page *page = list_entry (elem, struct page, allelem);
+  struct page *page = list_entry (list_pop_front (&page_list), struct page, allelem);
   kpage = page->kpage;
-  t = page->owner;
 
   /* don't allow that thread to run. */
   old_level = intr_disable ();
-  switch (t->status) {
-    case THREAD_RUNNING:
-      t = NULL;                 /* t is the current thread. */
-      break;
 
-    case THREAD_READY:
-      t->swap_deep = 0;
-      t->status = THREAD_EVICTION;
-      list_remove (&t->elem);
-      t->block_completed = true;
-      break;
-
-    case THREAD_BLOCKED:
-      t->status = THREAD_EVICTION;
-      t->block_completed = false;
-      break;
-
-    case THREAD_EVICTION:
-      ASSERT ("what?? 1");
-      t->swap_deep++;
-      break;
-
-    case THREAD_DYING:
-      PANIC ("kernel bug - thread in eviction is dying.");
-      break;
+  if (!lock_try_acquire (&page->evict)) {
+    PANIC ("eviction bug - bad page choosed.");
   }
+
+  /* remove from page table. */
+  pagedir_clear_page (page->owner->pagedir, page->upage);
+  page->kpage = NULL;
+
   intr_set_level (old_level); 
   lock_release (&page_lock);
 
@@ -104,26 +83,7 @@ page_evict (void)
   if (page->is_writable)
     page->swap = swap_push_page (kpage, page->owner);
 
-  /* remove from page table. */
-  pagedir_clear_page (page->owner->pagedir, page->upage);
-  page->kpage = NULL;
-
-  if (t != NULL) {
-    old_level = intr_disable ();
-
-    if (t->swap_deep == 0) {
-      t->status = THREAD_BLOCKED;
-      if (t->block_completed)
-        thread_unblock (t); 
-
-    } else {
-      ASSERT ("what?? 2");
-      t->swap_deep--;
-    }
-
-    intr_set_level (old_level);
-  }
-
+  lock_release (&page->evict);
   lock_release (&evict_lock);
   return kpage;
 }

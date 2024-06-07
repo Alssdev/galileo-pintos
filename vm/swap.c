@@ -5,8 +5,9 @@
 #include "threads/synch.h"
 #include "threads/malloc.h"
 #include "threads/vaddr.h"
+#include "userprog/syscall.h"
 
-#define SWAP_SIZE 512          /* swap file size in PAGES. */
+#define SWAP_SIZE 1024               /* swap file size in PAGES. */
 #define SECTORS_PER_PAGE 8          /* swap file size in PAGES. */
 
 struct lock swap_lock;
@@ -26,7 +27,7 @@ void swap_init (void) {
     page->sector = i * SECTORS_PER_PAGE;
     page->owner = NULL; 
 
-    list_push_front (&swap_free, &page->elem);
+    list_push_back (&swap_free, &page->elem);
   }
 }
 
@@ -48,12 +49,13 @@ struct swap_page *swap_push_page (void *kpage, struct thread *owner) {
   lock_release (&swap_lock);
 
   struct swap_page *swap = list_entry (elem, struct swap_page, elem);
-  // ASSERT (swap->owner == NULL);
   swap->owner = owner;
 
   /* copy memory data. No synchronization needed. */
+  filesys_acquire ();
   for (int i = 0; i < SECTORS_PER_PAGE; i++)
     block_write (swap_block, swap->sector + i, kpage + i * BLOCK_SECTOR_SIZE);
+  filesys_release ();
 
   return swap;
 }
@@ -67,8 +69,10 @@ void swap_pop_page (struct swap_page *swap, void *kpage) {
   struct block *swap_block = block_get_role (BLOCK_SWAP);
 
   /* read from file. No synchronization neeeded. */
+  filesys_acquire ();
   for (int i = 0; i < SECTORS_PER_PAGE; i++)
     block_read (swap_block, swap->sector + i, kpage + i * BLOCK_SECTOR_SIZE);
+  filesys_release ();
 
   /* mark sectors as free. */
   swap_free_page (swap);

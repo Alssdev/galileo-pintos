@@ -168,6 +168,10 @@ page_fault (struct intr_frame *f)
   /* search page in page_table. */
   struct page *page = ptable_find_entry (fault_upage);
   if (page != NULL && (page->is_writable || !write)) {
+    /* synchronization for eviction. */
+    lock_acquire (&page->evict);
+    lock_release (&page->evict);
+
     if (page->swap == NULL) {
       switch (page->type) {
         case CODE:

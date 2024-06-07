@@ -21,6 +21,7 @@ struct page {
   void *kpage;
   enum page_type type;
   bool is_writable;
+  struct lock evict;
 
   /* for page_list. Refer to page.h */
   struct list_elem allelem;

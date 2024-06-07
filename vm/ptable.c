@@ -1,5 +1,6 @@
 #include "ptable.h"
 #include "list.h"
+#include "page.h"
 #include "swap.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
@@ -19,6 +20,7 @@ struct page *ptable_new_entry (void *upage, bool writable, enum page_type type) 
     page->kpage = NULL;
     page->type = type;
     page->is_writable = writable;
+    lock_init (&page->evict);
 
     page->ofs = 0;
     page->read_bytes = 0;
@@ -54,6 +56,8 @@ struct page *ptable_find_entry (void *upage) {
 void ptable_free_table (void) {
   struct thread *cur = thread_current ();
 
+  lock_acquire (&evict_lock);
+
   for (struct list_elem *elem = list_begin (&cur->page_table); elem != list_end (&cur->page_table);
        elem = list_next (elem)) {
     struct page *page = list_entry (elem, struct page, elem);
@@ -66,5 +70,7 @@ void ptable_free_table (void) {
     page_remove (page);
     free (page);
   }
+
+  lock_release (&evict_lock);
 }
 
